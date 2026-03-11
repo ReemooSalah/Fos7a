@@ -19,22 +19,70 @@ const LEVELS = [
 ];
 
 const STORAGE_KEY = "fos7a_v3";
+const MAX_CHILDREN = 10;
+const MAX_NAME_LENGTH = 30;
+const MAX_SESSIONS_PER_CHILD = 200;
+const MAX_AVATAR_SIZE_MB = 2;
 
+// ─── Security: Sanitize text input ───────────────────────────────
+function sanitizeText(str) {
+  if (typeof str !== "string") return "";
+  return str.replace(/[<>&"'`]/g, "").trim().slice(0, MAX_NAME_LENGTH);
+}
+
+// ─── Security: Validate AI response ──────────────────────────────
+function validateQuestions(parsed) {
+  if (!Array.isArray(parsed)) return false;
+  if (parsed.length < 1 || parsed.length > 20) return false;
+  return parsed.every(q => {
+    if (typeof q.q !== "string" || q.q.length > 500) return false;
+    if (!Array.isArray(q.opts) || q.opts.length !== 4) return false;
+    if (!q.opts.every(o => typeof o === "string" && o.length < 200)) return false;
+    if (typeof q.ans !== "number" || q.ans < 0 || q.ans > 3) return false;
+    if (typeof q.img !== "string") return false;
+    // Block suspicious content
+    const combined = (q.q + q.opts.join("")).toLowerCase();
+    const blocked = ["<script", "javascript:", "onclick", "onerror", "eval(", "http"];
+    if (blocked.some(b => combined.includes(b))) return false;
+    return true;
+  });
+}
+
+// ─── Storage ──────────────────────────────────────────────────────
 function loadProgress() {
-  try { return JSON.parse(localStorage.getItem(STORAGE_KEY) || "{}"); }
-  catch { return {}; }
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (!raw) return {};
+    const data = JSON.parse(raw);
+    if (typeof data !== "object" || Array.isArray(data)) return {};
+    return data;
+  } catch { return {}; }
 }
 function saveProgress(data) {
   try { localStorage.setItem(STORAGE_KEY, JSON.stringify(data)); } catch {}
 }
 function initChild(name, age, avatar) {
-  return { name, age, avatar: avatar || null, createdAt: Date.now(), sessions: [] };
+  return {
+    name: sanitizeText(name),
+    age: ["young", "old"].includes(age) ? age : "old",
+    avatar: avatar || null,
+    createdAt: Date.now(),
+    sessions: []
+  };
 }
 function recordSession(progress, childId, subjectId, levelId, score, total) {
   const updated = { ...progress };
   if (!updated[childId]) return updated;
+  // Validate inputs
+  if (!SUBJECTS.find(s => s.id === subjectId)) return updated;
+  if (!LEVELS.find(l => l.id === levelId)) return updated;
+  if (typeof score !== "number" || typeof total !== "number") return updated;
+  if (score < 0 || total < 1 || score > total) return updated;
+
   const session = { subjectId, levelId, score, total, pct: Math.round((score / total) * 100), date: Date.now() };
-  updated[childId] = { ...updated[childId], sessions: [...(updated[childId].sessions || []), session] };
+  const sessions = [...(updated[childId].sessions || []), session];
+  // Limit sessions stored per child
+  updated[childId] = { ...updated[childId], sessions: sessions.slice(-MAX_SESSIONS_PER_CHILD) };
   saveProgress(updated);
   return updated;
 }
@@ -57,46 +105,62 @@ function getStats(child) {
   return { bySubject, total: sessions.length, avgPct: Math.round(sessions.reduce((a, b) => a + b.pct, 0) / sessions.length), streak, recent: sessions.slice(-6).reverse() };
 }
 
-// Speech
-function speak(text, lang) {
-  if (!window.speechSynthesis) return;
-  window.speechSynthesis.cancel();
-  const u = new SpeechSynthesisUtterance(text);
-  u.lang = lang === "en" ? "en-US" : "ar-SA"; u.rate = 0.85; u.pitch = 1.1;
-  window.speechSynthesis.speak(u);
-}
-function stopSpeech() { if (window.speechSynthesis) window.speechSynthesis.cancel(); }
-
-// Sound
+// ─── Sound Effects ────────────────────────────────────────────────
 function playSound(type) {
   try {
     const ctx = new (window.AudioContext || window.webkitAudioContext)();
-    const o = ctx.createOscillator(), g = ctx.createGain();
-    o.connect(g); g.connect(ctx.destination);
+    const now = ctx.currentTime;
+
     if (type === "correct") {
-      o.frequency.setValueAtTime(523, ctx.currentTime);
-      o.frequency.setValueAtTime(659, ctx.currentTime + 0.1);
-      o.frequency.setValueAtTime(784, ctx.currentTime + 0.2);
-      g.gain.setValueAtTime(0.3, ctx.currentTime);
-      g.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.5);
-      o.start(); o.stop(ctx.currentTime + 0.5);
-    } else {
-      o.frequency.setValueAtTime(300, ctx.currentTime);
-      o.frequency.setValueAtTime(200, ctx.currentTime + 0.15);
-      g.gain.setValueAtTime(0.3, ctx.currentTime);
-      g.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.3);
-      o.start(); o.stop(ctx.currentTime + 0.3);
+      // Happy ascending melody ✅
+      [523.25, 659.25, 783.99, 1046.50].forEach((freq, i) => {
+        const o = ctx.createOscillator(), g = ctx.createGain();
+        o.connect(g); g.connect(ctx.destination);
+        o.type = "sine"; o.frequency.value = freq;
+        g.gain.setValueAtTime(0, now + i * 0.1);
+        g.gain.linearRampToValueAtTime(0.35, now + i * 0.1 + 0.04);
+        g.gain.exponentialRampToValueAtTime(0.001, now + i * 0.1 + 0.25);
+        o.start(now + i * 0.1); o.stop(now + i * 0.1 + 0.25);
+      });
+    } else if (type === "wrong") {
+      // Sad descending buzz ❌
+      [349.23, 261.63].forEach((freq, i) => {
+        const o = ctx.createOscillator(), g = ctx.createGain();
+        o.connect(g); g.connect(ctx.destination);
+        o.type = "sawtooth";
+        o.frequency.setValueAtTime(freq, now + i * 0.18);
+        o.frequency.linearRampToValueAtTime(freq * 0.82, now + i * 0.18 + 0.22);
+        g.gain.setValueAtTime(0.22, now + i * 0.18);
+        g.gain.exponentialRampToValueAtTime(0.001, now + i * 0.18 + 0.28);
+        o.start(now + i * 0.18); o.stop(now + i * 0.18 + 0.3);
+      });
+    } else if (type === "complete") {
+      // Victory fanfare 🏆
+      [523, 659, 784, 659, 784, 1046].forEach((freq, i) => {
+        const o = ctx.createOscillator(), g = ctx.createGain();
+        o.connect(g); g.connect(ctx.destination);
+        o.type = "sine"; o.frequency.value = freq;
+        g.gain.setValueAtTime(0.3, now + i * 0.1);
+        g.gain.exponentialRampToValueAtTime(0.001, now + i * 0.1 + 0.22);
+        o.start(now + i * 0.1); o.stop(now + i * 0.1 + 0.22);
+      });
+    } else if (type === "click") {
+      const o = ctx.createOscillator(), g = ctx.createGain();
+      o.connect(g); g.connect(ctx.destination);
+      o.frequency.value = 880;
+      g.gain.setValueAtTime(0.12, now);
+      g.gain.exponentialRampToValueAtTime(0.001, now + 0.07);
+      o.start(now); o.stop(now + 0.07);
     }
   } catch {}
 }
 
-// Share
+// ─── Share ────────────────────────────────────────────────────────
 function buildShareText(childName, subject, level, score, total) {
   const pct = Math.round((score / total) * 100);
   const stars = pct === 100 ? "⭐⭐⭐⭐⭐" : pct >= 80 ? "⭐⭐⭐⭐" : pct >= 60 ? "⭐⭐⭐" : "⭐⭐";
-  return `🇸🇩 فسحة - منصة تعليمية للأطفال\n\n🎉 ${childName} أنهى جلسة تعليمية!\n📚 المادة: ${subject.label}\n🎯 المستوى: ${level.label} ${level.emoji}\n✅ النتيجة: ${score}/${total} (${pct}%)\n${stars}\n\nانضم لفسحة مجاناً 👇\nhttps://fos7a.vercel.app`;
+  return `🇸🇩 فسحة - منصة تعليمية للأطفال\n\n🎉 ${sanitizeText(childName)} أنهى جلسة تعليمية!\n📚 المادة: ${subject.label}\n🎯 المستوى: ${level.label} ${level.emoji}\n✅ النتيجة: ${score}/${total} (${pct}%)\n${stars}\n\nانضم لفسحة مجاناً 👇\nhttps://fos7a.vercel.app`;
 }
-
 async function doShare(text) {
   if (navigator.share) {
     try { await navigator.share({ title: "فسحة - نتيجة تعليمية", text }); return "shared"; } catch { return false; }
@@ -104,33 +168,36 @@ async function doShare(text) {
   try { await navigator.clipboard.writeText(text); return "copied"; } catch { return false; }
 }
 
-// Prompt
+// ─── Prompt ───────────────────────────────────────────────────────
 const QTYPES = {
   arabic:  ["الحروف الهجائية", "الكلمات البسيطة", "الألوان والأشكال", "الحيوانات", "الأرقام بالعربية", "الفواكه والخضروات", "أفراد الأسرة"],
   english: ["alphabet letters", "simple words and colors", "animals", "numbers", "body parts", "fruits and food", "action words"],
   math:    ["جمع 1-10", "طرح 1-10", "عد الأشياء", "مقارنة الأعداد", "الأشكال الهندسية", "التسلسلات", "ضرب 1-5"],
 };
 function buildPrompt(subjectId, age, levelId) {
+  // Only allow whitelisted values in prompt
+  if (!QTYPES[subjectId]) return null;
   const ageLabel = age === "young" ? "3 إلى 6 سنوات" : "6 إلى 10 سنوات";
   const topic = QTYPES[subjectId][Math.floor(Math.random() * QTYPES[subjectId].length)];
   const diff = { easy: { ar: "بسيطة جداً ومباشرة", en: "very simple and direct" }, medium: { ar: "متوسطة تحتاج تفكيراً", en: "moderate, requires some thought" }, hard: { ar: "صعبة تحتاج تفكيراً عميقاً", en: "challenging and detailed" } }[levelId];
+  if (!diff) return null;
   const map = {
     arabic:  `أنت مساعد تعليمي للأطفال السودانيين. اصنع 5 أسئلة باللغة العربية لطفل عمره ${ageLabel}. الموضوع: ${topic}. الصعوبة: ${diff.ar}.`,
     english: `You are an educational assistant. Create 5 English questions for a child aged ${ageLabel}. Topic: ${topic}. Difficulty: ${diff.en}.`,
     math:    `أنت مساعد تعليمي. اصنع 5 أسئلة رياضيات لطفل عمره ${ageLabel}. الموضوع: ${topic}. الصعوبة: ${diff.ar}.`,
   };
-  return `${map[subjectId]}\n\nJSON فقط بلا أي نص إضافي:\n[{"q":"السؤال","opts":["أ","ب","ج","د"],"ans":0,"img":"إيموجي"}]\n- ans = index الإجابة الصحيحة (0-3)\n- محتوى آمن للأطفال 100%`;
+  return `${map[subjectId]}\n\nJSON فقط بلا أي نص إضافي:\n[{"q":"السؤال","opts":["أ","ب","ج","د"],"ans":0,"img":"إيموجي"}]\n- ans = index الإجابة الصحيحة (0-3)\n- محتوى آمن للأطفال 100%\n- لا تضع أي HTML أو روابط`;
 }
 
-// ─── UI Atoms ────────────────────────────────────────────────────
+// ─── UI Atoms ─────────────────────────────────────────────────────
 const Btn = ({ children, onClick, color = C.accent, outline, style = {} }) => (
-  <button onClick={onClick} style={{ background: outline ? "transparent" : color, border: `2px solid ${color}`, color: outline ? color : "#000", borderRadius: 14, padding: "12px 22px", fontWeight: 700, fontSize: 15, cursor: "pointer", fontFamily: "inherit", transition: "all 0.2s", ...style }}>{children}</button>
+  <button onClick={() => { playSound("click"); onClick?.(); }} style={{ background: outline ? "transparent" : color, border: `2px solid ${color}`, color: outline ? color : "#000", borderRadius: 14, padding: "12px 22px", fontWeight: 700, fontSize: 15, cursor: "pointer", fontFamily: "inherit", transition: "all 0.2s", ...style }}>{children}</button>
 );
 const Card = ({ children, style = {} }) => (
   <div style={{ background: C.card2, borderRadius: 20, padding: 20, border: "1px solid rgba(255,255,255,0.06)", ...style }}>{children}</div>
 );
 function ProgressBar({ pct, color, height = 8 }) {
-  return <div style={{ background: "#1a3050", borderRadius: 99, height, overflow: "hidden" }}><div style={{ height: "100%", width: `${pct}%`, background: color, borderRadius: 99, transition: "width 0.6s ease" }} /></div>;
+  return <div style={{ background: "#1a3050", borderRadius: 99, height, overflow: "hidden" }}><div style={{ height: "100%", width: `${Math.min(100, Math.max(0, pct))}%`, background: color, borderRadius: 99, transition: "width 0.6s ease" }} /></div>;
 }
 function Stars({ count, size = 18 }) {
   return <span>{[...Array(5)].map((_, i) => <span key={i} style={{ opacity: i < count ? 1 : 0.18, fontSize: size }}>⭐</span>)}</span>;
@@ -139,11 +206,11 @@ function Badge({ label, color }) {
   return <span style={{ background: color + "22", color, border: `1px solid ${color}55`, borderRadius: 99, padding: "3px 10px", fontSize: 12, fontWeight: 700 }}>{label}</span>;
 }
 function Avatar({ src, name, size = 44, color = C.accent }) {
-  if (src) return <img src={src} alt={name} style={{ width: size, height: size, borderRadius: "50%", objectFit: "cover", border: `2px solid ${color}` }} />;
+  if (src) return <img src={src} alt="" style={{ width: size, height: size, borderRadius: "50%", objectFit: "cover", border: `2px solid ${color}` }} />;
   return <div style={{ width: size, height: size, borderRadius: "50%", background: color + "22", border: `2px solid ${color}`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: size * 0.45, fontWeight: 900, color }}>{name?.[0] || "؟"}</div>;
 }
 
-// ─── Welcome ─────────────────────────────────────────────────────
+// ─── Welcome ──────────────────────────────────────────────────────
 function WelcomeScreen({ progress, onSelectChild, onAddChild, onParentDash }) {
   const children = Object.entries(progress);
   return (
@@ -164,7 +231,7 @@ function WelcomeScreen({ progress, onSelectChild, onAddChild, onParentDash }) {
             {children.map(([id, child]) => {
               const stats = getStats(child);
               return (
-                <button key={id} onClick={() => onSelectChild(id)} style={{ background: C.card2, border: "2px solid rgba(245,168,0,0.2)", borderRadius: 18, padding: "14px 18px", cursor: "pointer", color: C.text, display: "flex", alignItems: "center", justifyContent: "space-between", transition: "all 0.2s", direction: "rtl", fontFamily: "inherit" }}
+                <button key={id} onClick={() => { playSound("click"); onSelectChild(id); }} style={{ background: C.card2, border: "2px solid rgba(245,168,0,0.2)", borderRadius: 18, padding: "14px 18px", cursor: "pointer", color: C.text, display: "flex", alignItems: "center", justifyContent: "space-between", transition: "all 0.2s", direction: "rtl", fontFamily: "inherit" }}
                   onMouseEnter={e => e.currentTarget.style.borderColor = C.accent}
                   onMouseLeave={e => e.currentTarget.style.borderColor = "rgba(245,168,0,0.2)"}>
                   <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
@@ -182,7 +249,7 @@ function WelcomeScreen({ progress, onSelectChild, onAddChild, onParentDash }) {
         </div>
       )}
       <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-        <Btn onClick={onAddChild} style={{ width: "100%" }}>+ إضافة طفل جديد</Btn>
+        {children.length < MAX_CHILDREN && <Btn onClick={onAddChild} style={{ width: "100%" }}>+ إضافة طفل جديد</Btn>}
         {children.length > 0 && <Btn onClick={onParentDash} outline color={C.muted} style={{ width: "100%", color: C.muted }}>📊 لوحة تحكم الأهل</Btn>}
       </div>
       <style>{`@keyframes blink{0%,100%{opacity:1}50%{opacity:0.3}}`}</style>
@@ -191,19 +258,26 @@ function WelcomeScreen({ progress, onSelectChild, onAddChild, onParentDash }) {
 }
 
 // ─── Add Child ────────────────────────────────────────────────────
-function AddChildScreen({ onSave, onBack }) {
+function AddChildScreen({ onSave, onBack, currentCount }) {
   const [name, setName] = useState("");
   const [age, setAge] = useState("old");
   const [avatar, setAvatar] = useState(null);
+  const [avatarErr, setAvatarErr] = useState("");
   const fileRef = useRef();
 
   function handleImg(e) {
     const file = e.target.files[0];
     if (!file) return;
+    // Validate file type and size
+    if (!file.type.startsWith("image/")) { setAvatarErr("يرجى اختيار صورة فقط"); return; }
+    if (file.size > MAX_AVATAR_SIZE_MB * 1024 * 1024) { setAvatarErr(`الصورة كبيرة جداً (حد أقصى ${MAX_AVATAR_SIZE_MB}MB)`); return; }
+    setAvatarErr("");
     const reader = new FileReader();
     reader.onload = ev => setAvatar(ev.target.result);
     reader.readAsDataURL(file);
   }
+
+  const cleanName = sanitizeText(name);
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
@@ -211,19 +285,21 @@ function AddChildScreen({ onSave, onBack }) {
         <button onClick={onBack} style={{ background: "rgba(255,255,255,0.07)", border: "none", color: C.text, borderRadius: 10, padding: "8px 14px", cursor: "pointer", fontSize: 13 }}>← رجوع</button>
         <h2 style={{ color: C.text, margin: 0, direction: "rtl", fontWeight: 800 }}>إضافة طفل جديد</h2>
       </div>
+      {currentCount >= MAX_CHILDREN && <p style={{ color: C.red, direction: "rtl", textAlign: "center" }}>وصلت للحد الأقصى ({MAX_CHILDREN} أطفال)</p>}
       <Card>
         <div style={{ display: "flex", flexDirection: "column", gap: 18, direction: "rtl" }}>
           <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 10 }}>
             <div onClick={() => fileRef.current?.click()} style={{ cursor: "pointer", position: "relative" }}>
-              <Avatar src={avatar} name={name || "؟"} size={88} />
+              <Avatar src={avatar} name={cleanName || "؟"} size={88} />
               <div style={{ position: "absolute", bottom: 2, right: 2, background: C.accent, borderRadius: "50%", width: 26, height: 26, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 14 }}>📷</div>
             </div>
-            <span style={{ color: C.muted, fontSize: 12 }}>اضغط لإضافة صورة الطفل</span>
-            <input ref={fileRef} type="file" accept="image/*" onChange={handleImg} style={{ display: "none" }} />
+            {avatarErr && <p style={{ color: C.red, fontSize: 12, margin: 0 }}>{avatarErr}</p>}
+            <span style={{ color: C.muted, fontSize: 12 }}>اضغط لإضافة صورة (اختياري)</span>
+            <input ref={fileRef} type="file" accept="image/jpeg,image/png,image/webp,image/gif" onChange={handleImg} style={{ display: "none" }} />
           </div>
           <div>
             <label style={{ color: C.muted, fontSize: 13, display: "block", marginBottom: 6 }}>اسم الطفل</label>
-            <input value={name} onChange={e => setName(e.target.value)} placeholder="مثال: أحمد"
+            <input value={name} onChange={e => setName(e.target.value.slice(0, MAX_NAME_LENGTH))} placeholder="مثال: أحمد" maxLength={MAX_NAME_LENGTH}
               style={{ width: "100%", background: C.bg, border: "1.5px solid rgba(255,255,255,0.1)", borderRadius: 12, padding: "12px 16px", color: C.text, fontSize: 16, fontFamily: "inherit", outline: "none", boxSizing: "border-box", direction: "rtl" }} />
           </div>
           <div>
@@ -238,7 +314,7 @@ function AddChildScreen({ onSave, onBack }) {
           </div>
         </div>
       </Card>
-      <Btn onClick={() => { if (name.trim()) onSave("child_" + Date.now(), initChild(name.trim(), age, avatar)); }} style={{ width: "100%", opacity: name.trim() ? 1 : 0.4 }}>✅ حفظ وابدأ التعلم</Btn>
+      <Btn onClick={() => { if (cleanName && currentCount < MAX_CHILDREN) onSave("child_" + Date.now(), initChild(cleanName, age, avatar)); }} style={{ width: "100%", opacity: cleanName ? 1 : 0.4 }}>✅ حفظ وابدأ التعلم</Btn>
     </div>
   );
 }
@@ -249,8 +325,8 @@ function SubjectHome({ child, onPickSubject, onBack, onViewProgress }) {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-        <button onClick={onBack} style={{ background: "rgba(255,255,255,0.07)", border: "none", color: C.text, borderRadius: 10, padding: "8px 14px", cursor: "pointer", fontSize: 13 }}>← رجوع</button>
-        <button onClick={onViewProgress} style={{ background: "rgba(46,204,113,0.12)", border: "1px solid rgba(46,204,113,0.3)", color: C.green, borderRadius: 10, padding: "8px 14px", cursor: "pointer", fontSize: 13, fontWeight: 700 }}>📊 تقدمي</button>
+        <button onClick={() => { playSound("click"); onBack(); }} style={{ background: "rgba(255,255,255,0.07)", border: "none", color: C.text, borderRadius: 10, padding: "8px 14px", cursor: "pointer", fontSize: 13 }}>← رجوع</button>
+        <button onClick={() => { playSound("click"); onViewProgress(); }} style={{ background: "rgba(46,204,113,0.12)", border: "1px solid rgba(46,204,113,0.3)", color: C.green, borderRadius: 10, padding: "8px 14px", cursor: "pointer", fontSize: 13, fontWeight: 700 }}>📊 تقدمي</button>
       </div>
       <div style={{ textAlign: "center" }}>
         <Avatar src={child.avatar} name={child.name} size={68} />
@@ -266,7 +342,7 @@ function SubjectHome({ child, onPickSubject, onBack, onViewProgress }) {
         {SUBJECTS.map(s => {
           const ss = stats?.bySubject[s.id];
           return (
-            <button key={s.id} onClick={() => onPickSubject(s)} style={{ background: `linear-gradient(135deg,${s.color}15,${s.color}05)`, border: `2px solid ${s.color}33`, borderRadius: 20, padding: "18px 22px", cursor: "pointer", color: C.text, width: "100%", display: "flex", alignItems: "center", justifyContent: "space-between", transition: "all 0.25s", direction: "rtl", fontFamily: "inherit" }}
+            <button key={s.id} onClick={() => { playSound("click"); onPickSubject(s); }} style={{ background: `linear-gradient(135deg,${s.color}15,${s.color}05)`, border: `2px solid ${s.color}33`, borderRadius: 20, padding: "18px 22px", cursor: "pointer", color: C.text, width: "100%", display: "flex", alignItems: "center", justifyContent: "space-between", transition: "all 0.25s", direction: "rtl", fontFamily: "inherit" }}
               onMouseEnter={e => { e.currentTarget.style.borderColor = s.color; e.currentTarget.style.transform = "translateY(-2px)"; }}
               onMouseLeave={e => { e.currentTarget.style.borderColor = s.color + "33"; e.currentTarget.style.transform = "none"; }}>
               <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
@@ -290,7 +366,7 @@ function LevelSelector({ subject, onSelect, onBack }) {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
       <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-        <button onClick={onBack} style={{ background: "rgba(255,255,255,0.07)", border: "none", color: C.text, borderRadius: 10, padding: "8px 14px", cursor: "pointer", fontSize: 13 }}>← رجوع</button>
+        <button onClick={() => { playSound("click"); onBack(); }} style={{ background: "rgba(255,255,255,0.07)", border: "none", color: C.text, borderRadius: 10, padding: "8px 14px", cursor: "pointer", fontSize: 13 }}>← رجوع</button>
         <span style={{ color: subject.color, fontWeight: 700, fontSize: 18 }}>{subject.emoji} {subject.label}</span>
       </div>
       <div style={{ textAlign: "center" }}>
@@ -299,7 +375,7 @@ function LevelSelector({ subject, onSelect, onBack }) {
       </div>
       <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
         {LEVELS.map(lv => (
-          <button key={lv.id} onClick={() => onSelect(lv)} style={{ background: `linear-gradient(135deg,${lv.color}18,${lv.color}06)`, border: `2px solid ${lv.color}44`, borderRadius: 20, padding: "20px 24px", cursor: "pointer", color: C.text, width: "100%", display: "flex", alignItems: "center", gap: 16, transition: "all 0.25s", direction: "rtl", fontFamily: "inherit" }}
+          <button key={lv.id} onClick={() => { playSound("click"); onSelect(lv); }} style={{ background: `linear-gradient(135deg,${lv.color}18,${lv.color}06)`, border: `2px solid ${lv.color}44`, borderRadius: 20, padding: "20px 24px", cursor: "pointer", color: C.text, width: "100%", display: "flex", alignItems: "center", gap: 16, transition: "all 0.25s", direction: "rtl", fontFamily: "inherit" }}
             onMouseEnter={e => { e.currentTarget.style.borderColor = lv.color; e.currentTarget.style.transform = "translateY(-2px)"; }}
             onMouseLeave={e => { e.currentTarget.style.borderColor = lv.color + "44"; e.currentTarget.style.transform = "none"; }}>
             <span style={{ fontSize: 40 }}>{lv.emoji}</span>
@@ -338,53 +414,35 @@ function QuizScreen({ subject, level, questions, onBack, onComplete }) {
   const [score, setScore] = useState(0);
   const [shake, setShake] = useState(false);
   const [feedback, setFeedback] = useState(null);
-  const [speaking, setSpeaking] = useState(false);
   const q = questions[idx];
   const isRTL = subject.id !== "english";
-  const lang = subject.id === "english" ? "en" : "ar";
-
-  useEffect(() => {
-    const t = setTimeout(() => speak(q.q, lang), 600);
-    return () => { clearTimeout(t); stopSpeech(); };
-  }, [idx]);
-
-  function handleSpeak() {
-    setSpeaking(true);
-    speak(q.q, lang);
-    setTimeout(() => setSpeaking(false), 2500);
-  }
 
   function choose(i) {
     if (selected !== null) return;
     const correct = i === q.ans;
     setSelected(i); setFeedback(correct ? "correct" : "wrong");
     playSound(correct ? "correct" : "wrong");
-    if (correct) { speak(isRTL ? "ممتاز! إجابة صحيحة!" : "Great job! Correct!", lang); setScore(s => s + 1); }
-    else { speak(isRTL ? "حاول مرة أخرى!" : "Try again!", lang); setShake(true); setTimeout(() => setShake(false), 500); }
+    if (correct) setScore(s => s + 1);
+    else { setShake(true); setTimeout(() => setShake(false), 500); }
     setTimeout(() => {
-      stopSpeech(); setFeedback(null);
-      if (idx + 1 < questions.length) { setIdx(idx + 1); setSelected(null); setTimeout(() => speak(questions[idx + 1]?.q, lang), 700); }
-      else onComplete(score + (correct ? 1 : 0));
+      setFeedback(null);
+      if (idx + 1 < questions.length) { setIdx(idx + 1); setSelected(null); }
+      else { playSound("complete"); onComplete(score + (correct ? 1 : 0)); }
     }, 1400);
   }
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-        <button onClick={() => { stopSpeech(); onBack(); }} style={{ background: "rgba(255,255,255,0.07)", border: "none", color: C.text, borderRadius: 10, padding: "8px 14px", cursor: "pointer", fontSize: 13 }}>← رجوع</button>
-        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-          <span style={{ background: level.color + "22", color: level.color, borderRadius: 99, padding: "4px 10px", fontSize: 12, fontWeight: 700 }}>{level.emoji} {level.label}</span>
-        </div>
+        <button onClick={() => { playSound("click"); onBack(); }} style={{ background: "rgba(255,255,255,0.07)", border: "none", color: C.text, borderRadius: 10, padding: "8px 14px", cursor: "pointer", fontSize: 13 }}>← رجوع</button>
+        <span style={{ background: level.color + "22", color: level.color, borderRadius: 99, padding: "4px 10px", fontSize: 12, fontWeight: 700 }}>{level.emoji} {level.label}</span>
         <span style={{ background: subject.color + "22", color: subject.color, borderRadius: 10, padding: "6px 12px", fontWeight: 700, fontSize: 13 }}>{idx + 1}/{questions.length}</span>
       </div>
       <ProgressBar pct={((idx + 1) / questions.length) * 100} color={subject.color} height={10} />
       <Card style={{ textAlign: "center", animation: shake ? "shake 0.5s" : "none", border: `2px solid ${subject.color}33` }}>
         {feedback && <div style={{ fontSize: 22, fontWeight: 900, marginBottom: 6, color: feedback === "correct" ? C.green : C.red, animation: "popIn 0.3s ease" }}>{feedback === "correct" ? "✅ ممتاز!" : "❌ حاول مرة أخرى!"}</div>}
         <div style={{ fontSize: 58, marginBottom: 10 }}>{q.img}</div>
-        <p style={{ fontSize: 20, fontWeight: 700, color: C.text, direction: isRTL ? "rtl" : "ltr", lineHeight: 1.5, margin: "0 0 14px" }}>{q.q}</p>
-        <button onClick={handleSpeak} style={{ background: speaking ? subject.color + "33" : "rgba(255,255,255,0.07)", border: `1.5px solid ${subject.color}55`, borderRadius: 99, padding: "8px 20px", color: subject.color, cursor: "pointer", fontSize: 14, fontFamily: "inherit", fontWeight: 700, transition: "all 0.2s" }}>
-          🔊 {isRTL ? "اسمع السؤال" : "Listen"}
-        </button>
+        <p style={{ fontSize: 20, fontWeight: 700, color: C.text, direction: isRTL ? "rtl" : "ltr", lineHeight: 1.5, margin: 0 }}>{q.q}</p>
       </Card>
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
         {q.opts.map((opt, i) => {
@@ -393,10 +451,9 @@ function QuizScreen({ subject, level, questions, onBack, onComplete }) {
             if (i === q.ans) { bg = "#2ECC7120"; border = "2px solid #2ECC71"; color = C.green; }
             else if (i === selected) { bg = "#E74C3C20"; border = "2px solid #E74C3C"; color = C.red; }
           }
-          return <button key={i} onClick={() => choose(i)} onMouseEnter={() => selected === null && speak(opt, lang)} style={{ background: bg, border, color, borderRadius: 16, padding: "16px 10px", fontSize: isRTL ? 18 : 16, fontWeight: 700, cursor: selected ? "default" : "pointer", transition: "all 0.25s", direction: isRTL ? "rtl" : "ltr", fontFamily: "inherit", minHeight: 58 }}>{opt}</button>;
+          return <button key={i} onClick={() => choose(i)} style={{ background: bg, border, color, borderRadius: 16, padding: "16px 10px", fontSize: isRTL ? 18 : 16, fontWeight: 700, cursor: selected ? "default" : "pointer", transition: "all 0.25s", direction: isRTL ? "rtl" : "ltr", fontFamily: "inherit", minHeight: 58 }}>{opt}</button>;
         })}
       </div>
-      <p style={{ color: C.muted, fontSize: 12, textAlign: "center", direction: "rtl", margin: 0 }}>💡 مرّر على الإجابة لتسمعها</p>
       <style>{`@keyframes shake{0%,100%{transform:translateX(0)}25%,75%{transform:translateX(-8px)}50%{transform:translateX(8px)}}@keyframes popIn{from{transform:scale(0.5);opacity:0}to{transform:scale(1);opacity:1}}`}</style>
     </div>
   );
@@ -412,7 +469,7 @@ function ResultScreen({ score, total, subject, level, child, onRetry, onHome }) 
   async function handleShare() {
     const text = buildShareText(child.name, subject, level, score, total);
     const res = await doShare(text);
-    setShareMsg(res === "copied" ? "✅ تم نسخ النتيجة! الصقها في واتساب" : res === "shared" ? "✅ تمت المشاركة!" : "❌ تعذرت المشاركة");
+    setShareMsg(res === "copied" ? "✅ تم النسخ! الصقها في واتساب" : res === "shared" ? "✅ تمت المشاركة!" : "❌ تعذرت المشاركة");
     setTimeout(() => setShareMsg(null), 4000);
   }
 
@@ -461,7 +518,7 @@ function ChildProgress({ child, onBack }) {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
       <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-        <button onClick={onBack} style={{ background: "rgba(255,255,255,0.07)", border: "none", color: C.text, borderRadius: 10, padding: "8px 14px", cursor: "pointer", fontSize: 13 }}>← رجوع</button>
+        <button onClick={() => { playSound("click"); onBack(); }} style={{ background: "rgba(255,255,255,0.07)", border: "none", color: C.text, borderRadius: 10, padding: "8px 14px", cursor: "pointer", fontSize: 13 }}>← رجوع</button>
         <Avatar src={child.avatar} name={child.name} size={36} />
         <h2 style={{ color: C.text, margin: 0, fontWeight: 800, direction: "rtl" }}>تقدم {child.name}</h2>
       </div>
@@ -528,7 +585,7 @@ function ParentDashboard({ progress, onBack }) {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
       <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-        <button onClick={onBack} style={{ background: "rgba(255,255,255,0.07)", border: "none", color: C.text, borderRadius: 10, padding: "8px 14px", cursor: "pointer", fontSize: 13 }}>← رجوع</button>
+        <button onClick={() => { playSound("click"); onBack(); }} style={{ background: "rgba(255,255,255,0.07)", border: "none", color: C.text, borderRadius: 10, padding: "8px 14px", cursor: "pointer", fontSize: 13 }}>← رجوع</button>
         <h2 style={{ color: C.text, margin: 0, fontWeight: 800, direction: "rtl" }}>📊 لوحة تحكم الأهل</h2>
       </div>
       {children.length === 0 ? <div style={{ textAlign: "center", padding: 40 }}><div style={{ fontSize: 52 }}>👨‍👩‍👧</div><p style={{ color: C.muted, direction: "rtl" }}>لا يوجد أطفال مسجلين بعد</p></div>
@@ -594,15 +651,45 @@ export default function App() {
   const activeChild = progress[activeChildId];
 
   const fetchQuestions = useCallback(async (subject, level) => {
+    // Validate subject and level
+    if (!SUBJECTS.find(s => s.id === subject.id)) return;
+    if (!LEVELS.find(l => l.id === level.id)) return;
+
     setActiveSubject(subject); setActiveLevel(level);
     setScreen("loading"); setError(null);
+
+    const prompt = buildPrompt(subject.id, activeChild?.age || "old", level.id);
+    if (!prompt) { setError("خطأ في بناء الطلب"); setScreen("error"); return; }
+
     try {
-      const res = await fetch("/api/ask", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ model: "claude-sonnet-4-20250514", max_tokens: 1000, messages: [{ role: "user", content: buildPrompt(subject.id, activeChild?.age || "old", level.id) }] }) });
+      const res = await fetch("/api/ask", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          model: "claude-sonnet-4-20250514",
+          max_tokens: 1000,
+          messages: [{ role: "user", content: prompt }],
+        }),
+      });
+
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json();
-      const raw = data?.content?.[0]?.text || "";
-      const parsed = JSON.parse(raw.replace(/```json|```/g, "").trim());
-      if (!Array.isArray(parsed) || !parsed.length) throw new Error();
-      setQuestions(parsed); setScreen("quiz");
+
+      // Validate response structure
+      if (!data?.content?.[0]?.text) throw new Error("Empty response");
+      const raw = data.content[0].text;
+
+      // Strip any markdown and parse JSON safely
+      const jsonStr = raw.replace(/```json|```/gi, "").trim();
+      if (jsonStr.length > 10000) throw new Error("Response too large");
+
+      const parsed = JSON.parse(jsonStr);
+
+      // Security: validate every question
+      if (!validateQuestions(parsed)) throw new Error("Invalid question format");
+
+      setQuestions(parsed);
+      setScreen("quiz");
     } catch {
       setError("مشكلة في توليد الأسئلة. تأكد من الاتصال.");
       setScreen("error");
@@ -610,6 +697,7 @@ export default function App() {
   }, [activeChild]);
 
   function handleAddChild(id, child) {
+    if (Object.keys(progress).length >= MAX_CHILDREN) return;
     const updated = { ...progress, [id]: child };
     setProgress(updated); saveProgress(updated);
     setActiveChildId(id); setScreen("subjects");
@@ -625,12 +713,12 @@ export default function App() {
     <div style={{ minHeight: "100vh", background: C.bg, fontFamily: "'Tajawal','Cairo','Segoe UI',sans-serif", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: 20 }}>
       <div style={{ width: "100%", maxWidth: 480, background: C.card, borderRadius: 32, padding: 26, boxShadow: "0 32px 100px rgba(0,0,0,0.6)", border: "1px solid rgba(255,255,255,0.05)" }}>
         {screen === "welcome"       && <WelcomeScreen progress={progress} onSelectChild={id => { setActiveChildId(id); setScreen("subjects"); }} onAddChild={() => setScreen("addChild")} onParentDash={() => setScreen("parentDash")} />}
-        {screen === "addChild"      && <AddChildScreen onSave={handleAddChild} onBack={() => setScreen("welcome")} />}
+        {screen === "addChild"      && <AddChildScreen onSave={handleAddChild} onBack={() => setScreen("welcome")} currentCount={Object.keys(progress).length} />}
         {screen === "subjects"      && activeChild && <SubjectHome child={activeChild} onPickSubject={s => { setActiveSubject(s); setScreen("levels"); }} onBack={() => setScreen("welcome")} onViewProgress={() => setScreen("childProgress")} />}
         {screen === "levels"        && activeSubject && <LevelSelector subject={activeSubject} onSelect={lv => fetchQuestions(activeSubject, lv)} onBack={() => setScreen("subjects")} />}
         {screen === "loading"       && activeSubject && <LoadingScreen subject={activeSubject} />}
-        {screen === "quiz"          && questions.length > 0 && <QuizScreen subject={activeSubject} level={activeLevel} questions={questions} onBack={() => setScreen("levels")} onComplete={handleComplete} />}
-        {screen === "result"        && <ResultScreen score={finalScore} total={questions.length} subject={activeSubject} level={activeLevel} child={activeChild} onRetry={() => fetchQuestions(activeSubject, activeLevel)} onHome={() => setScreen("subjects")} />}
+        {screen === "quiz"          && questions.length > 0 && activeSubject && activeLevel && <QuizScreen subject={activeSubject} level={activeLevel} questions={questions} onBack={() => setScreen("levels")} onComplete={handleComplete} />}
+        {screen === "result"        && activeSubject && activeLevel && activeChild && <ResultScreen score={finalScore} total={questions.length} subject={activeSubject} level={activeLevel} child={activeChild} onRetry={() => fetchQuestions(activeSubject, activeLevel)} onHome={() => setScreen("subjects")} />}
         {screen === "childProgress" && activeChild && <ChildProgress child={activeChild} onBack={() => setScreen("subjects")} />}
         {screen === "parentDash"    && <ParentDashboard progress={progress} onBack={() => setScreen("welcome")} />}
         {screen === "error"         && (
