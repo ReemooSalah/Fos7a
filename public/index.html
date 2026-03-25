@@ -8,7 +8,8 @@
     <title>فسحة - تعلّم وإبدع</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@400;700;900&family=Cairo:wght@700;900&display=swap" rel="stylesheet" />
+    <link rel="preload" as="style" href="https://fonts.googleapis.com/css2?family=Tajawal:wght@700;900&family=Cairo:wght@700;900&display=swap" />
+    <link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@700;900&family=Cairo:wght@700;900&display=swap" rel="stylesheet" />
     <!-- Google Analytics -->
     <script async src="https://www.googletagmanager.com/gtag/js?id=G-0WSL5C44KL"></script>
     <script>
@@ -27,9 +28,33 @@
         font-family: 'Tajawal', 'Cairo', sans-serif;
         -webkit-font-smoothing: antialiased;
       }
+      #splash {
+        position: fixed; inset: 0;
+        background: #F9F0EB;
+        display: flex; flex-direction: column;
+        align-items: center; justify-content: center;
+        gap: 12px; z-index: 9999;
+        transition: opacity 0.4s ease;
+      }
+      #splash.hide { opacity: 0; pointer-events: none; }
+      #splash-flag { font-size: 60px; animation: splashSpin 1.5s linear infinite; }
+      #splash-title { font-size: 34px; font-weight: 900; color: #C85A00; font-family: 'Tajawal', sans-serif; }
+      @keyframes splashSpin { to { transform: rotate(360deg); } }
     </style>
   </head>
   <body>
+    <div id="splash">
+      <div id="splash-flag">🇸🇩</div>
+      <div id="splash-title">فُسحة</div>
+    </div>
+    <script>
+      window.addEventListener('load', function() {
+        setTimeout(function() {
+          var s = document.getElementById('splash');
+          if(s){ s.classList.add('hide'); setTimeout(function(){ s.remove(); }, 400); }
+        }, 600);
+      });
+    </script>
     <noscript>يرجى تفعيل JavaScript لتشغيل هذا التطبيق.</noscript>
     <div id="root"></div>
   </body>
