@@ -1,737 +1,536 @@
-import { useState, useCallback, useEffect, useRef } from "react";
+import { useState, useEffect, useCallback } from "react";
+import { supabase } from "./supabase";
 
+// ─── Design System (Warm Beige + Fos7a Orange) ────────────────────
 const C = {
-  bg: "#07111F", card: "#0D1E35", card2: "#112240",
-  accent: "#F5A800", green: "#2ECC71", red: "#E74C3C",
-  blue: "#3498DB", text: "#E8F4FD", muted: "#6B8CAE",
+  bg:       "#F9F0EB",
+  bg2:      "#F2E8E2",
+  card:     "#FFFFFF",
+  orange:   "#C85A00",
+  orangeMid:"#E06B00",
+  orangeBtn:"#B84E00",
+  orangeLt: "#FFF0E8",
+  green:    "#1A7A6E",
+  greenLt:  "#D4F5F0",
+  yellow:   "#F5B800",
+  yellowLt: "#FFF8DC",
+  red:      "#DC2626",
+  text:     "#2C1810",
+  muted:    "#8A7570",
+  border:   "rgba(0,0,0,0.08)",
+  shadow:   "0 4px 20px rgba(0,0,0,0.07)",
+  shadowHover: "0 12px 32px rgba(200,90,0,0.15)",
 };
+const FONT = "'Tajawal','Cairo',sans-serif";
 
+const CSS = `
+  @keyframes fadeUp  { from{opacity:0;transform:translateY(18px)} to{opacity:1;transform:translateY(0)} }
+  @keyframes popIn   { from{opacity:0;transform:scale(.6) rotate(-6deg)} to{opacity:1;transform:scale(1) rotate(0)} }
+  @keyframes float   { 0%,100%{transform:translateY(0)} 50%{transform:translateY(-9px)} }
+  @keyframes shake   { 0%,100%{transform:translateX(0)} 25%,75%{transform:translateX(-7px)} 50%{transform:translateX(7px)} }
+  @keyframes spin    { to{transform:rotate(360deg)} }
+  @keyframes pulse   { 0%,100%{transform:scale(1)} 50%{transform:scale(1.04)} }
+  @keyframes checkPop{ 0%{transform:scale(0)} 60%{transform:scale(1.3)} 100%{transform:scale(1)} }
+  @keyframes shimmer { 0%{background-position:-200% 0} 100%{background-position:200% 0} }
+  .shimmer-text {
+    background: linear-gradient(90deg,#C85A00 25%,#F28C00 50%,#C85A00 75%);
+    background-size: 200% auto;
+    -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+    background-clip: text; animation: shimmer 2.5s linear infinite;
+  }
+`;
+
+// ─── Data ────────────────────────────────────────────────────────
 const SUBJECTS = [
-  { id: "arabic",  label: "عربي",    emoji: "📖", color: "#F5A800", desc: "حروف وكلمات" },
-  { id: "english", label: "English", emoji: "🔤", color: "#3498DB", desc: "Letters & Words" },
-  { id: "math",    label: "رياضيات", emoji: "🔢", color: "#2ECC71", desc: "أرقام وحساب" },
+  { id:"arabic",  label:"اللغة العربية", labelShort:"عربي",  emoji:"🐻", color:C.orange, bg:C.orangeLt, desc:"حروف وكلمات وجمل",        level:"المستوى ٤", prog:75,  progColor:C.orange  },
+  { id:"english", label:"English",       labelShort:"English",emoji:"🦊", color:"#8B7A00",bg:"#FFF8DC",  desc:"Letters, Words & Sentences", level:"Level 2",   prog:30,  progColor:C.yellow  },
+  { id:"math",    label:"الرياضيات",     labelShort:"رياضيات",emoji:"🤓", color:C.green,  bg:C.greenLt,  desc:"أسرار الأرقام والحساب!",    level:"المستوى ٨", prog:92,  progColor:C.green   },
 ];
-
 const LEVELS = [
-  { id: "easy",   label: "سهل",   emoji: "🌱", color: "#2ECC71", desc: "للمبتدئين، أسئلة بسيطة جداً" },
-  { id: "medium", label: "متوسط", emoji: "⭐", color: "#F5A800", desc: "مستوى متوسط يحتاج تفكيراً" },
-  { id: "hard",   label: "صعب",   emoji: "🔥", color: "#E74C3C", desc: "للمتقدمين، تحدٍّ حقيقي!" },
+  { id:"easy",   label:"سهل",   emoji:"🌱", color:C.green,  bg:C.greenLt  },
+  { id:"medium", label:"متوسط", emoji:"⭐", color:"#D97706", bg:"#FFF8EB"  },
+  { id:"hard",   label:"صعب",   emoji:"🔥", color:C.red,    bg:"#FFEBEB"  },
+];
+const ARABIC_LETTERS = [
+  { id:"alef",letter:"أ",name:"الألف",color:C.orange,  sound:"آ",  words:[{word:"أَسَد",emoji:"🦁",meaning:"Lion"},{word:"أُمّ",emoji:"👩",meaning:"Mother"},{word:"أَرْنَب",emoji:"🐰",meaning:"Rabbit"}],examples:["أَحْمَد","أَزْرَق","أَخ"]},
+  { id:"ba",  letter:"ب",name:"الباء",color:"#2563EB",  sound:"بَ", words:[{word:"بَطَّة",emoji:"🦆",meaning:"Duck"},{word:"بَيْت",emoji:"🏠",meaning:"House"},{word:"بَقَرة",emoji:"🐄",meaning:"Cow"}],examples:["بَاب","كِتَاب","حَبّ"]},
+  { id:"ta",  letter:"ت",name:"التاء",color:"#7C3AED",  sound:"تَ", words:[{word:"تُفَّاحة",emoji:"🍎",meaning:"Apple"},{word:"تِمْسَاح",emoji:"🐊",meaning:"Crocodile"},{word:"تَمْر",emoji:"🌴",meaning:"Dates"}],examples:["تَاج","بَيْت","نَبَات"]},
+  { id:"tha", letter:"ث",name:"الثاء",color:C.green,    sound:"ثَ", words:[{word:"ثَعْلَب",emoji:"🦊",meaning:"Fox"},{word:"ثَلاثة",emoji:"3️⃣",meaning:"Three"},{word:"ثَلْج",emoji:"❄️",meaning:"Snow"}],examples:["ثَوْب","حَديث","لَيْث"]},
+  { id:"jim", letter:"ج",name:"الجيم",color:"#DC2626",  sound:"جَ", words:[{word:"جَمَل",emoji:"🐪",meaning:"Camel"},{word:"جَبَل",emoji:"⛰️",meaning:"Mountain"},{word:"جَزَرة",emoji:"🥕",meaning:"Carrot"}],examples:["جَار","شَجَر","مَسْجِد"]},
+  { id:"ha",  letter:"ح",name:"الحاء",color:"#D97706",  sound:"حَ", words:[{word:"حِصَان",emoji:"🐴",meaning:"Horse"},{word:"حَوْت",emoji:"🐳",meaning:"Whale"},{word:"حَمَامة",emoji:"🕊️",meaning:"Dove"}],examples:["حَب","صَحْن","مِلْح"]},
+  { id:"kha", letter:"خ",name:"الخاء",color:"#7C3AED",  sound:"خَ", words:[{word:"خَروف",emoji:"🐑",meaning:"Sheep"},{word:"خُبْز",emoji:"🍞",meaning:"Bread"},{word:"خَيْمة",emoji:"⛺",meaning:"Tent"}],examples:["خَال","نَخْل","شَيْخ"]},
+  { id:"dal", letter:"د",name:"الدال",color:C.green,    sound:"دَ", words:[{word:"دُبّ",emoji:"🐻",meaning:"Bear"},{word:"دَجَاجة",emoji:"🐔",meaning:"Chicken"},{word:"دَفْتَر",emoji:"📓",meaning:"Notebook"}],examples:["دَار","وَلَد","عَيْد"]},
+];
+const ENGLISH_LETTERS = [
+  { id:"a",letter:"A",name:"Letter A",color:C.orange,  sound:"Ah/Ay",words:[{word:"Apple",emoji:"🍎",meaning:"تفاحة"},{word:"Ant",emoji:"🐜",meaning:"نملة"},{word:"Airplane",emoji:"✈️",meaning:"طيارة"}],examples:["Apple","Ant","Animal"]},
+  { id:"b",letter:"B",name:"Letter B",color:"#2563EB",  sound:"Buh",  words:[{word:"Ball",emoji:"⚽",meaning:"كرة"},{word:"Butterfly",emoji:"🦋",meaning:"فراشة"},{word:"Bear",emoji:"🐻",meaning:"دب"}],examples:["Ball","Bee","Banana"]},
+  { id:"c",letter:"C",name:"Letter C",color:"#7C3AED",  sound:"Kuh",  words:[{word:"Cat",emoji:"🐱",meaning:"قطة"},{word:"Car",emoji:"🚗",meaning:"سيارة"},{word:"Cake",emoji:"🎂",meaning:"كيكة"}],examples:["Cat","Cow","Camel"]},
+  { id:"d",letter:"D",name:"Letter D",color:C.green,    sound:"Duh",  words:[{word:"Dog",emoji:"🐕",meaning:"كلب"},{word:"Duck",emoji:"🦆",meaning:"بطة"},{word:"Door",emoji:"🚪",meaning:"باب"}],examples:["Dog","Deer","Dolphin"]},
+  { id:"e",letter:"E",name:"Letter E",color:"#DC2626",  sound:"Eh/Ee",words:[{word:"Elephant",emoji:"🐘",meaning:"فيل"},{word:"Egg",emoji:"🥚",meaning:"بيضة"},{word:"Eagle",emoji:"🦅",meaning:"نسر"}],examples:["Egg","Elephant","Earth"]},
+  { id:"f",letter:"F",name:"Letter F",color:"#D97706",  sound:"Fuh",  words:[{word:"Fish",emoji:"🐟",meaning:"سمكة"},{word:"Flower",emoji:"🌸",meaning:"زهرة"},{word:"Frog",emoji:"🐸",meaning:"ضفدع"}],examples:["Fish","Fox","Frog"]},
 ];
 
-const STORAGE_KEY = "fos7a_v3";
-const MAX_CHILDREN = 10;
-const MAX_NAME_LENGTH = 30;
-const MAX_SESSIONS_PER_CHILD = 200;
-const MAX_AVATAR_SIZE_MB = 2;
+// ─── Utils ────────────────────────────────────────────────────────
+function sanitize(s){if(typeof s!=="string")return"";return s.replace(/[<>&"'`]/g,"").trim().slice(0,100);}
+function validateEmail(e){return/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e);}
+function validateQuestions(p){if(!Array.isArray(p)||p.length<1||p.length>10)return false;return p.every(q=>typeof q.q==="string"&&q.q.length<300&&Array.isArray(q.opts)&&q.opts.length===4&&q.opts.every(o=>typeof o==="string"&&o.length<100)&&typeof q.ans==="number"&&q.ans>=0&&q.ans<=3);}
+function gaEvent(n,p={}){try{window.gtag?.("event",n,p);}catch{}}
 
-// ─── Security: Sanitize text input ───────────────────────────────
-function sanitizeText(str) {
-  if (typeof str !== "string") return "";
-  return str.replace(/[<>&"'`]/g, "").trim().slice(0, MAX_NAME_LENGTH);
+function playSound(type){
+  try{
+    const ctx=new(window.AudioContext||window.webkitAudioContext)();const t=ctx.currentTime;
+    if(type==="correct"){[[523,.0],[659,.1],[784,.2],[1047,.3]].forEach(([f,d])=>{const o=ctx.createOscillator(),g=ctx.createGain();o.connect(g);g.connect(ctx.destination);o.type="sine";o.frequency.value=f;g.gain.setValueAtTime(0,t+d);g.gain.linearRampToValueAtTime(.28,t+d+.05);g.gain.exponentialRampToValueAtTime(.001,t+d+.3);o.start(t+d);o.stop(t+d+.3);});}
+    else if(type==="wrong"){[[349,.0],[261,.2]].forEach(([f,d])=>{const o=ctx.createOscillator(),g=ctx.createGain();o.connect(g);g.connect(ctx.destination);o.type="sawtooth";o.frequency.setValueAtTime(f,t+d);o.frequency.linearRampToValueAtTime(f*.8,t+d+.25);g.gain.setValueAtTime(.2,t+d);g.gain.exponentialRampToValueAtTime(.001,t+d+.3);o.start(t+d);o.stop(t+d+.3);});}
+    else if(type==="complete"){[523,659,784,659,784,1046].forEach((f,i)=>{const o=ctx.createOscillator(),g=ctx.createGain();o.connect(g);g.connect(ctx.destination);o.type="sine";o.frequency.value=f;g.gain.setValueAtTime(.25,t+i*.1);g.gain.exponentialRampToValueAtTime(.001,t+i*.1+.22);o.start(t+i*.1);o.stop(t+i*.1+.22);});}
+    else if(type==="click"){const o=ctx.createOscillator(),g=ctx.createGain();o.connect(g);g.connect(ctx.destination);o.frequency.value=1200;g.gain.setValueAtTime(.07,t);g.gain.exponentialRampToValueAtTime(.001,t+.06);o.start(t);o.stop(t+.06);}
+  }catch{}
 }
-
-// ─── Security: Validate AI response ──────────────────────────────
-function validateQuestions(parsed) {
-  if (!Array.isArray(parsed)) return false;
-  if (parsed.length < 1 || parsed.length > 20) return false;
-  return parsed.every(q => {
-    if (typeof q.q !== "string" || q.q.length > 500) return false;
-    if (!Array.isArray(q.opts) || q.opts.length !== 4) return false;
-    if (!q.opts.every(o => typeof o === "string" && o.length < 200)) return false;
-    if (typeof q.ans !== "number" || q.ans < 0 || q.ans > 3) return false;
-    if (typeof q.img !== "string") return false;
-    // Block suspicious content
-    const combined = (q.q + q.opts.join("")).toLowerCase();
-    const blocked = ["<script", "javascript:", "onclick", "onerror", "eval(", "http"];
-    if (blocked.some(b => combined.includes(b))) return false;
-    return true;
-  });
+function speak(text,lang="ar"){
+  try{window.speechSynthesis?.cancel();const u=new SpeechSynthesisUtterance(text);u.lang=lang==="ar"?"ar-SA":"en-US";u.rate=.82;u.pitch=1.15;u.volume=1;const voices=window.speechSynthesis?.getVoices()||[];const v=voices.find(v=>v.lang.startsWith(lang==="ar"?"ar":"en"))||null;if(v)u.voice=v;window.speechSynthesis?.speak(u);}catch{}
 }
 
-// ─── Storage ──────────────────────────────────────────────────────
-function loadProgress() {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return {};
-    const data = JSON.parse(raw);
-    if (typeof data !== "object" || Array.isArray(data)) return {};
-    return data;
-  } catch { return {}; }
-}
-function saveProgress(data) {
-  try { localStorage.setItem(STORAGE_KEY, JSON.stringify(data)); } catch {}
-}
-function initChild(name, age, avatar) {
-  return {
-    name: sanitizeText(name),
-    age: ["young", "old"].includes(age) ? age : "old",
-    avatar: avatar || null,
-    createdAt: Date.now(),
-    sessions: []
-  };
-}
-function recordSession(progress, childId, subjectId, levelId, score, total) {
-  const updated = { ...progress };
-  if (!updated[childId]) return updated;
-  // Validate inputs
-  if (!SUBJECTS.find(s => s.id === subjectId)) return updated;
-  if (!LEVELS.find(l => l.id === levelId)) return updated;
-  if (typeof score !== "number" || typeof total !== "number") return updated;
-  if (score < 0 || total < 1 || score > total) return updated;
+const QTYPES={arabic:["الحروف الهجائية","الكلمات البسيطة","الألوان","الحيوانات","الفواكه"],english:["alphabet letters","simple words","colors","animals","fruits"],math:["جمع ١-١٠","طرح ١-١٠","عد الأشياء","مقارنة الأعداد"]};
+function buildPrompt(sid,age,lid){if(!QTYPES[sid])return null;const topic=QTYPES[sid][Math.floor(Math.random()*QTYPES[sid].length)];const ageLabel=age==="young"?"٣ إلى ٦ سنوات":"٦ إلى ١٠ سنوات";const diff={easy:"بسيطة جداً",medium:"متوسطة",hard:"صعبة"}[lid]||"بسيطة";const base={arabic:`أنت مساعد تعليمي للأطفال السودانيين. اصنع 5 أسئلة باللغة العربية لطفل عمره ${ageLabel}. الموضوع: ${topic}. الصعوبة: ${diff}.`,english:`Educational assistant. Create 5 English questions for a child aged ${ageLabel}. Topic: ${topic}. Difficulty: ${diff}.`,math:`مساعد تعليمي. اصنع 5 أسئلة رياضيات لطفل عمره ${ageLabel}. الموضوع: ${topic}. الصعوبة: ${diff}.`};return `${base[sid]}\n\nJSON فقط:\n[{"q":"سؤال","opts":["أ","ب","ج","د"],"ans":0,"img":"🎯"}]\n- ans = رقم الإجابة (0-3)\n- محتوى آمن 100%`;}
 
-  const session = { subjectId, levelId, score, total, pct: Math.round((score / total) * 100), date: Date.now() };
-  const sessions = [...(updated[childId].sessions || []), session];
-  // Limit sessions stored per child
-  updated[childId] = { ...updated[childId], sessions: sessions.slice(-MAX_SESSIONS_PER_CHILD) };
-  saveProgress(updated);
-  return updated;
-}
-function getStats(child) {
-  const sessions = child.sessions || [];
-  if (!sessions.length) return null;
-  const bySubject = {};
-  SUBJECTS.forEach(s => {
-    const ss = sessions.filter(x => x.subjectId === s.id);
-    bySubject[s.id] = ss.length
-      ? { count: ss.length, avg: Math.round(ss.reduce((a, b) => a + b.pct, 0) / ss.length), best: Math.max(...ss.map(x => x.pct)) }
-      : null;
-  });
-  const days = [...new Set(sessions.map(s => new Date(s.date).toDateString()))];
-  let streak = days.length ? 1 : 0;
-  for (let i = 1; i < days.length; i++) {
-    if ((new Date(days[i - 1]) - new Date(days[i])) / 86400000 <= 1) streak++;
-    else break;
-  }
-  return { bySubject, total: sessions.length, avgPct: Math.round(sessions.reduce((a, b) => a + b.pct, 0) / sessions.length), streak, recent: sessions.slice(-6).reverse() };
+// ─── Shared UI Atoms ──────────────────────────────────────────────
+function ProgBar({pct,color,h=8}){return <div style={{background:"#E5D8D0",borderRadius:99,height:h,overflow:"hidden"}}><div style={{height:"100%",width:`${Math.min(100,Math.max(0,pct))}%`,background:`linear-gradient(90deg,${color},${color}CC)`,borderRadius:99,transition:"width .8s cubic-bezier(.4,0,.2,1)",boxShadow:`0 2px 6px ${color}66`}}/></div>;}
+
+function StarsBadge({count=120}){return <div style={{background:C.yellowLt,border:"1.5px solid rgba(245,184,0,.35)",borderRadius:99,padding:"5px 10px",display:"flex",alignItems:"center",gap:4}}><span style={{fontSize:15}}>⭐</span><span style={{fontWeight:900,fontSize:13,color:"#8A6000"}}>{count}</span></div>;}
+
+function BackBtn({onClick,label="← رجوع"}){return <button onClick={()=>{playSound("click");onClick?.();}} style={{background:C.bg2,border:"none",borderRadius:99,padding:"9px 16px",fontWeight:800,fontSize:14,color:C.text,cursor:"pointer",fontFamily:FONT,display:"flex",alignItems:"center",gap:6,transition:"all .2s"}} onMouseEnter={e=>e.currentTarget.style.background=C.orangeLt} onMouseLeave={e=>e.currentTarget.style.background=C.bg2}>{label}</button>;}
+
+function BtnPrimary({children,onClick,disabled,full,style={}}){return <button onClick={()=>{if(!disabled){playSound("click");onClick?.();}}} disabled={disabled} style={{background:disabled?"#D4C4BB":`linear-gradient(135deg,${C.orangeBtn},#A84500)`,color:"white",border:"none",borderRadius:99,padding:"15px 28px",fontWeight:800,fontSize:17,cursor:disabled?"not-allowed":"pointer",fontFamily:FONT,width:full?"100%":undefined,boxShadow:disabled?"none":`0 6px 20px rgba(184,78,0,.4),inset 0 1px 0 rgba(255,255,255,.15)`,transition:"all .2s",display:"flex",alignItems:"center",justifyContent:"center",gap:10,...style}} onMouseEnter={e=>{if(!disabled)e.currentTarget.style.transform="translateY(-2px)";}} onMouseLeave={e=>e.currentTarget.style.transform="translateY(0)"}>{children}</button>;}
+
+function BtnGreen({children,onClick,style={}}){return <button onClick={()=>{playSound("click");onClick?.();}} style={{background:`linear-gradient(135deg,${C.green},#1FA090)`,color:"white",border:"none",borderRadius:99,padding:"13px 24px",fontWeight:800,fontSize:15,cursor:"pointer",fontFamily:FONT,boxShadow:`0 5px 16px rgba(26,122,110,.4)`,transition:"all .2s",display:"flex",alignItems:"center",justifyContent:"center",gap:8,...style}} onMouseEnter={e=>e.currentTarget.style.transform="translateY(-2px)"} onMouseLeave={e=>e.currentTarget.style.transform="translateY(0)"}>{children}</button>;}
+
+function BtnOutline({children,onClick,style={}}){return <button onClick={()=>{playSound("click");onClick?.();}} style={{background:"white",border:`2px solid ${C.border}`,borderRadius:99,padding:"13px 20px",fontWeight:800,fontSize:15,color:C.text,cursor:"pointer",fontFamily:FONT,transition:"all .2s",display:"flex",alignItems:"center",justifyContent:"center",gap:8,...style}} onMouseEnter={e=>{e.currentTarget.style.borderColor=C.orange;e.currentTarget.style.color=C.orange;e.currentTarget.style.background=C.orangeLt;}} onMouseLeave={e=>{e.currentTarget.style.borderColor=C.border;e.currentTarget.style.color=C.text;e.currentTarget.style.background="white";}}>{children}</button>;}
+
+function Card({children,style={},onClick}){return <div onClick={onClick} style={{background:C.card,borderRadius:24,border:`1.5px solid ${C.border}`,boxShadow:C.shadow,overflow:"hidden",transition:"all .25s",cursor:onClick?"pointer":undefined,...style}} onMouseEnter={e=>{if(onClick){e.currentTarget.style.transform="translateY(-3px)";e.currentTarget.style.boxShadow=C.shadowHover;}}} onMouseLeave={e=>{if(onClick){e.currentTarget.style.transform="translateY(0)";e.currentTarget.style.boxShadow=C.shadow;}}}>{children}</div>;}
+
+function LetterCircle({letter,size=52,color=C.orange}){return <div style={{width:size,height:size,borderRadius:"50%",background:`linear-gradient(135deg,${color},${color}CC)`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:size*.45,fontWeight:900,color:"white",boxShadow:`0 6px 20px ${color}55`,flexShrink:0}}>{letter}</div>;}
+
+function SpellBlock({letter,active,delay=0}){return <div style={{width:52,height:52,borderRadius:14,border:`2px solid ${active?C.orange:C.border}`,background:active?C.orangeLt:C.bg2,display:"flex",alignItems:"center",justifyContent:"center",fontSize:22,fontWeight:800,color:active?C.orange:C.text,transition:"all .25s",boxShadow:active?`0 4px 12px ${C.orange}33`:"none",animation:`popIn .5s cubic-bezier(.175,.885,.32,1.275) ${delay}s both`}}>{letter}</div>;}
+
+// ─── Toast ───────────────────────────────────────────────────────
+function Toast({msg}){if(!msg)return null;return <div style={{position:"fixed",top:80,left:"50%",transform:"translateX(-50%)",zIndex:9999,animation:"popIn .3s ease both"}}><div style={{background:C.text,color:"white",borderRadius:99,padding:"10px 22px",display:"flex",alignItems:"center",gap:8,boxShadow:"0 8px 32px rgba(0,0,0,.25)",fontFamily:FONT,fontWeight:700,fontSize:14,whiteSpace:"nowrap"}}>{msg}</div></div>;}
+
+// ─── TabBar ────────────────────────────────────────────────────────
+function TabBar({active,onTab}){
+  const tabs=[{id:"home",icon:"🏠",label:"الرئيسية"},{id:"journey",icon:"🗺️",label:"دروسي"},{id:"quiz",icon:"🎯",label:"إنجازاتي"},{id:"profile",icon:"👤",label:"حسابي"}];
+  return <div style={{position:"fixed",bottom:0,left:"50%",transform:"translateX(-50%)",width:"100%",maxWidth:480,background:"white",borderTop:`1px solid ${C.border}`,display:"flex",alignItems:"center",justifyContent:"space-around",padding:"8px 0 16px",zIndex:200,fontFamily:FONT}}>
+    {tabs.map((t,i)=>{
+      const isActive=active===t.id;
+      if(i===1)return <div key="home-center" style={{display:"flex",flexDirection:"column",alignItems:"center",gap:2,flex:1}}>
+        <div onClick={()=>{playSound("click");onTab(t.id);}} style={{width:50,height:50,borderRadius:"50%",background:`linear-gradient(135deg,${C.orange},#F28C00)`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:24,boxShadow:`0 4px 16px ${C.orange}55`,marginTop:-22,cursor:"pointer"}}>{t.icon}</div>
+        <span style={{fontSize:10,fontWeight:700,color:isActive?C.orange:C.muted}}>{t.label}</span>
+      </div>;
+      return <div key={t.id} onClick={()=>{playSound("click");onTab(t.id);}} style={{display:"flex",flexDirection:"column",alignItems:"center",gap:3,cursor:"pointer",flex:1,padding:"4px 0"}}>
+        <span style={{fontSize:20,opacity:isActive?1:.55}}>{t.icon}</span>
+        <span style={{fontSize:10,fontWeight:700,color:isActive?C.orange:C.muted}}>{t.label}</span>
+      </div>;
+    })}
+  </div>;
 }
 
-// ─── Sound Effects ────────────────────────────────────────────────
-function playSound(type) {
-  try {
-    const ctx = new (window.AudioContext || window.webkitAudioContext)();
-    const now = ctx.currentTime;
-
-    if (type === "correct") {
-      // Happy ascending melody ✅
-      [523.25, 659.25, 783.99, 1046.50].forEach((freq, i) => {
-        const o = ctx.createOscillator(), g = ctx.createGain();
-        o.connect(g); g.connect(ctx.destination);
-        o.type = "sine"; o.frequency.value = freq;
-        g.gain.setValueAtTime(0, now + i * 0.1);
-        g.gain.linearRampToValueAtTime(0.35, now + i * 0.1 + 0.04);
-        g.gain.exponentialRampToValueAtTime(0.001, now + i * 0.1 + 0.25);
-        o.start(now + i * 0.1); o.stop(now + i * 0.1 + 0.25);
-      });
-    } else if (type === "wrong") {
-      // Sad descending buzz ❌
-      [349.23, 261.63].forEach((freq, i) => {
-        const o = ctx.createOscillator(), g = ctx.createGain();
-        o.connect(g); g.connect(ctx.destination);
-        o.type = "sawtooth";
-        o.frequency.setValueAtTime(freq, now + i * 0.18);
-        o.frequency.linearRampToValueAtTime(freq * 0.82, now + i * 0.18 + 0.22);
-        g.gain.setValueAtTime(0.22, now + i * 0.18);
-        g.gain.exponentialRampToValueAtTime(0.001, now + i * 0.18 + 0.28);
-        o.start(now + i * 0.18); o.stop(now + i * 0.18 + 0.3);
-      });
-    } else if (type === "complete") {
-      // Victory fanfare 🏆
-      [523, 659, 784, 659, 784, 1046].forEach((freq, i) => {
-        const o = ctx.createOscillator(), g = ctx.createGain();
-        o.connect(g); g.connect(ctx.destination);
-        o.type = "sine"; o.frequency.value = freq;
-        g.gain.setValueAtTime(0.3, now + i * 0.1);
-        g.gain.exponentialRampToValueAtTime(0.001, now + i * 0.1 + 0.22);
-        o.start(now + i * 0.1); o.stop(now + i * 0.1 + 0.22);
-      });
-    } else if (type === "click") {
-      const o = ctx.createOscillator(), g = ctx.createGain();
-      o.connect(g); g.connect(ctx.destination);
-      o.frequency.value = 880;
-      g.gain.setValueAtTime(0.12, now);
-      g.gain.exponentialRampToValueAtTime(0.001, now + 0.07);
-      o.start(now); o.stop(now + 0.07);
-    }
-  } catch {}
-}
-
-// ─── Share ────────────────────────────────────────────────────────
-function buildShareText(childName, subject, level, score, total) {
-  const pct = Math.round((score / total) * 100);
-  const stars = pct === 100 ? "⭐⭐⭐⭐⭐" : pct >= 80 ? "⭐⭐⭐⭐" : pct >= 60 ? "⭐⭐⭐" : "⭐⭐";
-  return `🇸🇩 فسحة - منصة تعليمية للأطفال\n\n🎉 ${sanitizeText(childName)} أنهى جلسة تعليمية!\n📚 المادة: ${subject.label}\n🎯 المستوى: ${level.label} ${level.emoji}\n✅ النتيجة: ${score}/${total} (${pct}%)\n${stars}\n\nانضم لفسحة مجاناً 👇\nhttps://fos7a.vercel.app`;
-}
-async function doShare(text) {
-  if (navigator.share) {
-    try { await navigator.share({ title: "فسحة - نتيجة تعليمية", text }); return "shared"; } catch { return false; }
-  }
-  try { await navigator.clipboard.writeText(text); return "copied"; } catch { return false; }
-}
-
-// ─── Prompt ───────────────────────────────────────────────────────
-const QTYPES = {
-  arabic:  ["الحروف الهجائية", "الكلمات البسيطة", "الألوان والأشكال", "الحيوانات", "الأرقام بالعربية", "الفواكه والخضروات", "أفراد الأسرة"],
-  english: ["alphabet letters", "simple words and colors", "animals", "numbers", "body parts", "fruits and food", "action words"],
-  math:    ["جمع 1-10", "طرح 1-10", "عد الأشياء", "مقارنة الأعداد", "الأشكال الهندسية", "التسلسلات", "ضرب 1-5"],
-};
-function buildPrompt(subjectId, age, levelId) {
-  // Only allow whitelisted values in prompt
-  if (!QTYPES[subjectId]) return null;
-  const ageLabel = age === "young" ? "3 إلى 6 سنوات" : "6 إلى 10 سنوات";
-  const topic = QTYPES[subjectId][Math.floor(Math.random() * QTYPES[subjectId].length)];
-  const diff = { easy: { ar: "بسيطة جداً ومباشرة", en: "very simple and direct" }, medium: { ar: "متوسطة تحتاج تفكيراً", en: "moderate, requires some thought" }, hard: { ar: "صعبة تحتاج تفكيراً عميقاً", en: "challenging and detailed" } }[levelId];
-  if (!diff) return null;
-  const map = {
-    arabic:  `أنت مساعد تعليمي للأطفال السودانيين. اصنع 5 أسئلة باللغة العربية لطفل عمره ${ageLabel}. الموضوع: ${topic}. الصعوبة: ${diff.ar}.`,
-    english: `You are an educational assistant. Create 5 English questions for a child aged ${ageLabel}. Topic: ${topic}. Difficulty: ${diff.en}.`,
-    math:    `أنت مساعد تعليمي. اصنع 5 أسئلة رياضيات لطفل عمره ${ageLabel}. الموضوع: ${topic}. الصعوبة: ${diff.ar}.`,
-  };
-  return `${map[subjectId]}\n\nJSON فقط بلا أي نص إضافي:\n[{"q":"السؤال","opts":["أ","ب","ج","د"],"ans":0,"img":"إيموجي"}]\n- ans = index الإجابة الصحيحة (0-3)\n- محتوى آمن للأطفال 100%\n- لا تضع أي HTML أو روابط`;
-}
-
-// ─── UI Atoms ─────────────────────────────────────────────────────
-const Btn = ({ children, onClick, color = C.accent, outline, style = {} }) => (
-  <button onClick={() => { playSound("click"); onClick?.(); }} style={{ background: outline ? "transparent" : color, border: `2px solid ${color}`, color: outline ? color : "#000", borderRadius: 14, padding: "12px 22px", fontWeight: 700, fontSize: 15, cursor: "pointer", fontFamily: "inherit", transition: "all 0.2s", ...style }}>{children}</button>
-);
-const Card = ({ children, style = {} }) => (
-  <div style={{ background: C.card2, borderRadius: 20, padding: 20, border: "1px solid rgba(255,255,255,0.06)", ...style }}>{children}</div>
-);
-function ProgressBar({ pct, color, height = 8 }) {
-  return <div style={{ background: "#1a3050", borderRadius: 99, height, overflow: "hidden" }}><div style={{ height: "100%", width: `${Math.min(100, Math.max(0, pct))}%`, background: color, borderRadius: 99, transition: "width 0.6s ease" }} /></div>;
-}
-function Stars({ count, size = 18 }) {
-  return <span>{[...Array(5)].map((_, i) => <span key={i} style={{ opacity: i < count ? 1 : 0.18, fontSize: size }}>⭐</span>)}</span>;
-}
-function Badge({ label, color }) {
-  return <span style={{ background: color + "22", color, border: `1px solid ${color}55`, borderRadius: 99, padding: "3px 10px", fontSize: 12, fontWeight: 700 }}>{label}</span>;
-}
-function Avatar({ src, name, size = 44, color = C.accent }) {
-  if (src) return <img src={src} alt="" style={{ width: size, height: size, borderRadius: "50%", objectFit: "cover", border: `2px solid ${color}` }} />;
-  return <div style={{ width: size, height: size, borderRadius: "50%", background: color + "22", border: `2px solid ${color}`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: size * 0.45, fontWeight: 900, color }}>{name?.[0] || "؟"}</div>;
-}
-
-// ─── Welcome ──────────────────────────────────────────────────────
-function WelcomeScreen({ progress, onSelectChild, onAddChild, onParentDash }) {
-  const children = Object.entries(progress);
-  return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
-      <div style={{ textAlign: "center" }}>
-        <div style={{ fontSize: 52 }}>🇸🇩</div>
-        <h1 style={{ color: C.accent, fontWeight: 900, fontSize: 28, margin: "8px 0 4px" }}>فسحة</h1>
-        <p style={{ color: C.muted, fontSize: 14, margin: 0, direction: "rtl" }}>منصة تعليمية مجانية للأطفال السودانيين</p>
-        <div style={{ display: "inline-flex", alignItems: "center", gap: 6, background: "rgba(46,204,113,0.12)", border: "1px solid rgba(46,204,113,0.3)", borderRadius: 20, padding: "4px 14px", marginTop: 10 }}>
-          <div style={{ width: 7, height: 7, borderRadius: "50%", background: C.green, animation: "blink 1.5s infinite" }} />
-          <span style={{ color: C.green, fontSize: 13, fontWeight: 700 }}>مدعوم بـ Claude AI</span>
-        </div>
-      </div>
-      {children.length > 0 && (
-        <div>
-          <p style={{ color: C.muted, fontSize: 13, direction: "rtl", textAlign: "center", marginBottom: 10 }}>من يريد التعلم اليوم؟</p>
-          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-            {children.map(([id, child]) => {
-              const stats = getStats(child);
-              return (
-                <button key={id} onClick={() => { playSound("click"); onSelectChild(id); }} style={{ background: C.card2, border: "2px solid rgba(245,168,0,0.2)", borderRadius: 18, padding: "14px 18px", cursor: "pointer", color: C.text, display: "flex", alignItems: "center", justifyContent: "space-between", transition: "all 0.2s", direction: "rtl", fontFamily: "inherit" }}
-                  onMouseEnter={e => e.currentTarget.style.borderColor = C.accent}
-                  onMouseLeave={e => e.currentTarget.style.borderColor = "rgba(245,168,0,0.2)"}>
-                  <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-                    <Avatar src={child.avatar} name={child.name} size={48} />
-                    <div style={{ textAlign: "right" }}>
-                      <div style={{ fontWeight: 800, fontSize: 17 }}>{child.name}</div>
-                      <div style={{ color: C.muted, fontSize: 12 }}>{stats ? `${stats.total} جلسة · ${stats.avgPct}% متوسط` : "لم يبدأ بعد"}</div>
-                    </div>
-                  </div>
-                  {stats && <Badge label={`🔥 ${stats.streak}`} color={C.accent} />}
-                </button>
-              );
-            })}
+// ─── Auth Screen ──────────────────────────────────────────────────
+function AuthScreen({onAuth}){
+  const [mode,setMode]=useState("login");const [email,setEmail]=useState("");const [otp,setOtp]=useState("");const [loading,setLoading]=useState(false);const [error,setError]=useState("");const [msg,setMsg]=useState("");
+  async function sendOTP(){const clean=sanitize(email).toLowerCase();if(!validateEmail(clean)){setError("يرجى إدخال بريد إلكتروني صحيح ✉️");return;}setLoading(true);setError("");const{error:err}=await supabase.auth.signInWithOtp({email:clean,options:{shouldCreateUser:true}});setLoading(false);if(err){setError("تعذر إرسال الرمز.");return;}setMsg(clean);setMode("otp");gaEvent("send_otp");}
+  async function verifyOTP(){if(otp.length<6){setError("الرمز 6 أرقام");return;}setLoading(true);setError("");const{data,error:err}=await supabase.auth.verifyOtp({email:sanitize(email).toLowerCase(),token:otp,type:"email"});setLoading(false);if(err){setError("رمز غير صحيح ❌");return;}gaEvent("login_success");onAuth(data.user);}
+  return(
+    <div style={{minHeight:"100vh",background:C.bg,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:24,fontFamily:FONT}}>
+      <style>{CSS}</style>
+      <div style={{width:"100%",maxWidth:400,animation:"fadeUp .5s ease both"}}>
+        {/* Logo */}
+        <div style={{textAlign:"center",marginBottom:28}}>
+          <div style={{fontSize:64,marginBottom:4,animation:"float 3s ease-in-out infinite",display:"inline-block"}}>🇸🇩</div>
+          <h1 style={{fontSize:44,fontWeight:900,color:C.orange,margin:"0 0 4px"}}>فُسحة</h1>
+          <p style={{color:C.muted,fontSize:14,fontWeight:600}}>منصة تعليمية مجانية للأطفال السودانيين</p>
+          <div style={{display:"flex",justifyContent:"center",gap:8,marginTop:10,flexWrap:"wrap"}}>
+            {["📖 عربي","🔤 English","🔢 رياضيات"].map(s=><span key={s} style={{background:C.card,color:C.text,borderRadius:99,padding:"4px 12px",fontSize:12,fontWeight:700,border:`1px solid ${C.border}`}}>{s}</span>)}
           </div>
         </div>
-      )}
-      <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-        {children.length < MAX_CHILDREN && <Btn onClick={onAddChild} style={{ width: "100%" }}>+ إضافة طفل جديد</Btn>}
-        {children.length > 0 && <Btn onClick={onParentDash} outline color={C.muted} style={{ width: "100%", color: C.muted }}>📊 لوحة تحكم الأهل</Btn>}
+        <Card style={{padding:24}}>
+          <div style={{display:"flex",flexDirection:"column",gap:16,direction:"rtl"}}>
+            {mode==="login"?(<>
+              <div><h2 style={{fontWeight:900,fontSize:20,color:C.text,margin:"0 0 4px"}}>أهلاً بك! 👋</h2><p style={{color:C.muted,fontSize:13}}>أدخل بريدك الإلكتروني للبدء</p></div>
+              <input type="email" value={email} onChange={e=>setEmail(e.target.value)} placeholder="example@gmail.com" style={{background:C.bg2,border:`2px solid ${C.border}`,borderRadius:14,padding:"13px 16px",color:C.text,fontSize:16,fontFamily:FONT,outline:"none",direction:"ltr",width:"100%",boxSizing:"border-box"}} onFocus={e=>e.target.style.borderColor=C.orange} onBlur={e=>e.target.style.borderColor=C.border}/>
+              {error&&<div style={{background:"#FFF0F0",border:"1px solid #FFD0D0",borderRadius:12,padding:"10px 14px",color:C.red,fontSize:13,fontWeight:600}}>{error}</div>}
+              <BtnPrimary onClick={sendOTP} disabled={loading||!email} full>{loading?"⏳ جاري الإرسال...":"📨 إرسال رمز التحقق"}</BtnPrimary>
+              <div style={{display:"flex",alignItems:"center",gap:8,background:"#F0FFF8",borderRadius:12,padding:"10px 14px"}}><span>🔒</span><span style={{color:C.green,fontSize:12,fontWeight:700}}>تسجيل دخول آمن بدون كلمة مرور</span></div>
+            </>):(<>
+              <div><h2 style={{fontWeight:900,fontSize:20,color:C.text,margin:"0 0 4px"}}>تحقق من بريدك ✉️</h2><p style={{color:C.muted,fontSize:13}}>أرسلنا رمزاً من 6 أرقام إلى {msg}</p></div>
+              <div style={{display:"flex",justifyContent:"center",gap:8,direction:"ltr"}}>{[...Array(6)].map((_,i)=><div key={i} style={{width:44,height:52,borderRadius:12,border:`2px solid ${otp[i]?C.orange:C.border}`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:22,fontWeight:900,color:C.text,background:otp[i]?C.orangeLt:C.bg2}}>{otp[i]||""}</div>)}</div>
+              <input type="text" value={otp} onChange={e=>setOtp(e.target.value.replace(/\D/g,"").slice(0,6))} placeholder="أدخل الرمز" maxLength={6} style={{background:C.bg2,border:`2px solid ${C.border}`,borderRadius:14,padding:"13px 16px",color:C.text,fontSize:20,fontFamily:FONT,outline:"none",textAlign:"center",letterSpacing:8,direction:"ltr"}} onFocus={e=>e.target.style.borderColor=C.orange} onBlur={e=>e.target.style.borderColor=C.border}/>
+              {error&&<div style={{background:"#FFF0F0",border:"1px solid #FFD0D0",borderRadius:12,padding:"10px 14px",color:C.red,fontSize:13,fontWeight:600}}>{error}</div>}
+              <BtnPrimary onClick={verifyOTP} disabled={loading||otp.length<6} full>{loading?"⏳ جاري التحقق...":"✅ تأكيد الدخول"}</BtnPrimary>
+              <button onClick={()=>{setMode("login");setError("");setOtp("");}} style={{background:"none",border:"none",color:C.muted,cursor:"pointer",fontSize:13,fontFamily:FONT,fontWeight:600,textAlign:"center"}}>← تغيير البريد</button>
+            </>)}
+          </div>
+        </Card>
       </div>
-      <style>{`@keyframes blink{0%,100%{opacity:1}50%{opacity:0.3}}`}</style>
     </div>
   );
+}
+
+// ─── Setup Profile ────────────────────────────────────────────────
+function SetupProfile({user,onSave}){
+  const [name,setName]=useState("");const [loading,setLoading]=useState(false);
+  async function save(){const clean=sanitize(name);if(!clean)return;setLoading(true);await supabase.from("profiles").upsert({id:user.id,email:user.email,parent_name:clean,created_at:new Date().toISOString()});setLoading(false);onSave({id:user.id,email:user.email,parent_name:clean});}
+  return(<div style={{minHeight:"100vh",background:C.bg,display:"flex",alignItems:"center",justifyContent:"center",padding:24,fontFamily:FONT}}><style>{CSS}</style><div style={{width:"100%",maxWidth:400,animation:"fadeUp .5s ease both"}}><div style={{textAlign:"center",marginBottom:24}}><div style={{fontSize:64,marginBottom:8}}>👨‍👩‍👧</div><h2 style={{color:C.text,fontWeight:900,fontSize:26,margin:"0 0 4px"}}>أهلاً بك في فُسحة!</h2><p style={{color:C.muted,fontSize:14,fontWeight:600}}>كيف نناديك؟</p></div><Card style={{padding:24}}><div style={{display:"flex",flexDirection:"column",gap:16,direction:"rtl"}}><input value={name} onChange={e=>setName(e.target.value)} placeholder="مثال: أم أحمد" maxLength={50} style={{background:C.bg2,border:`2px solid ${C.border}`,borderRadius:14,padding:"13px 16px",color:C.text,fontSize:16,fontFamily:FONT,outline:"none",direction:"rtl"}} onFocus={e=>e.target.style.borderColor=C.orange} onBlur={e=>e.target.style.borderColor=C.border}/><BtnPrimary onClick={save} disabled={loading||!sanitize(name)} full>{loading?"⏳ جاري الحفظ...":"🚀 ابدأ الرحلة التعليمية"}</BtnPrimary></div></Card></div></div>);
 }
 
 // ─── Add Child ────────────────────────────────────────────────────
-function AddChildScreen({ onSave, onBack, currentCount }) {
-  const [name, setName] = useState("");
-  const [age, setAge] = useState("old");
-  const [avatar, setAvatar] = useState(null);
-  const [avatarErr, setAvatarErr] = useState("");
-  const fileRef = useRef();
-
-  function handleImg(e) {
-    const file = e.target.files[0];
-    if (!file) return;
-    // Validate file type and size
-    if (!file.type.startsWith("image/")) { setAvatarErr("يرجى اختيار صورة فقط"); return; }
-    if (file.size > MAX_AVATAR_SIZE_MB * 1024 * 1024) { setAvatarErr(`الصورة كبيرة جداً (حد أقصى ${MAX_AVATAR_SIZE_MB}MB)`); return; }
-    setAvatarErr("");
-    const reader = new FileReader();
-    reader.onload = ev => setAvatar(ev.target.result);
-    reader.readAsDataURL(file);
-  }
-
-  const cleanName = sanitizeText(name);
-
-  return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-        <button onClick={onBack} style={{ background: "rgba(255,255,255,0.07)", border: "none", color: C.text, borderRadius: 10, padding: "8px 14px", cursor: "pointer", fontSize: 13 }}>← رجوع</button>
-        <h2 style={{ color: C.text, margin: 0, direction: "rtl", fontWeight: 800 }}>إضافة طفل جديد</h2>
-      </div>
-      {currentCount >= MAX_CHILDREN && <p style={{ color: C.red, direction: "rtl", textAlign: "center" }}>وصلت للحد الأقصى ({MAX_CHILDREN} أطفال)</p>}
-      <Card>
-        <div style={{ display: "flex", flexDirection: "column", gap: 18, direction: "rtl" }}>
-          <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 10 }}>
-            <div onClick={() => fileRef.current?.click()} style={{ cursor: "pointer", position: "relative" }}>
-              <Avatar src={avatar} name={cleanName || "؟"} size={88} />
-              <div style={{ position: "absolute", bottom: 2, right: 2, background: C.accent, borderRadius: "50%", width: 26, height: 26, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 14 }}>📷</div>
-            </div>
-            {avatarErr && <p style={{ color: C.red, fontSize: 12, margin: 0 }}>{avatarErr}</p>}
-            <span style={{ color: C.muted, fontSize: 12 }}>اضغط لإضافة صورة (اختياري)</span>
-            <input ref={fileRef} type="file" accept="image/jpeg,image/png,image/webp,image/gif" onChange={handleImg} style={{ display: "none" }} />
-          </div>
-          <div>
-            <label style={{ color: C.muted, fontSize: 13, display: "block", marginBottom: 6 }}>اسم الطفل</label>
-            <input value={name} onChange={e => setName(e.target.value.slice(0, MAX_NAME_LENGTH))} placeholder="مثال: أحمد" maxLength={MAX_NAME_LENGTH}
-              style={{ width: "100%", background: C.bg, border: "1.5px solid rgba(255,255,255,0.1)", borderRadius: 12, padding: "12px 16px", color: C.text, fontSize: 16, fontFamily: "inherit", outline: "none", boxSizing: "border-box", direction: "rtl" }} />
-          </div>
-          <div>
-            <label style={{ color: C.muted, fontSize: 13, display: "block", marginBottom: 8 }}>الفئة العمرية</label>
-            <div style={{ display: "flex", gap: 10 }}>
-              {[{ v: "young", l: "٣ - ٦ سنوات", e: "🧒" }, { v: "old", l: "٦ - ١٠ سنوات", e: "👦" }].map(a => (
-                <button key={a.v} onClick={() => setAge(a.v)} style={{ flex: 1, background: age === a.v ? C.accent + "22" : C.bg, border: `2px solid ${age === a.v ? C.accent : "rgba(255,255,255,0.08)"}`, borderRadius: 14, padding: "14px 10px", cursor: "pointer", color: age === a.v ? C.accent : C.muted, fontWeight: 700, fontSize: 14, fontFamily: "inherit", transition: "all 0.2s" }}>
-                  <div style={{ fontSize: 28, marginBottom: 4 }}>{a.e}</div>{a.l}
-                </button>
-              ))}
-            </div>
-          </div>
-        </div>
-      </Card>
-      <Btn onClick={() => { if (cleanName && currentCount < MAX_CHILDREN) onSave("child_" + Date.now(), initChild(cleanName, age, avatar)); }} style={{ width: "100%", opacity: cleanName ? 1 : 0.4 }}>✅ حفظ وابدأ التعلم</Btn>
-    </div>
-  );
+function AddChildScreen({userId,onSave,onBack}){
+  const [name,setName]=useState("");const [age,setAge]=useState("old");const [loading,setLoading]=useState(false);
+  async function save(){const clean=sanitize(name);if(!clean)return;setLoading(true);const{data}=await supabase.from("children").insert({parent_id:userId,name:clean,age,created_at:new Date().toISOString()}).select().single();setLoading(false);if(data){gaEvent("add_child");onSave(data);}}
+  return(<div style={{minHeight:"100vh",background:C.bg,padding:24,fontFamily:FONT}}><style>{CSS}</style><div style={{maxWidth:400,margin:"0 auto",paddingTop:40,animation:"fadeUp .4s ease both"}}><BackBtn onClick={onBack} label="← رجوع"/><h2 style={{color:C.text,fontWeight:900,fontSize:22,margin:"20px 0 16px",direction:"rtl"}}>إضافة طفل جديد 👶</h2><Card style={{padding:24}}><div style={{display:"flex",flexDirection:"column",gap:20,direction:"rtl"}}><div><label style={{color:C.text,fontSize:14,fontWeight:700,display:"block",marginBottom:8}}>اسم الطفل</label><input value={name} onChange={e=>setName(e.target.value)} placeholder="مثال: أحمد" maxLength={30} style={{background:C.bg2,border:`2px solid ${C.border}`,borderRadius:14,padding:"13px 16px",color:C.text,fontSize:16,fontFamily:FONT,outline:"none",direction:"rtl",width:"100%",boxSizing:"border-box"}} onFocus={e=>e.target.style.borderColor=C.orange} onBlur={e=>e.target.style.borderColor=C.border}/></div><div><label style={{color:C.text,fontSize:14,fontWeight:700,display:"block",marginBottom:10}}>الفئة العمرية</label><div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>{[{v:"young",l:"٣ - ٦ سنوات",e:"🧒",c:C.orange},{v:"old",l:"٦ - ١٠ سنوات",e:"👦",c:"#2563EB"}].map(a=><button key={a.v} onClick={()=>setAge(a.v)} style={{background:age===a.v?a.c+"18":C.bg2,border:`2.5px solid ${age===a.v?a.c:C.border}`,borderRadius:16,padding:"18px 10px",cursor:"pointer",color:age===a.v?a.c:C.muted,fontWeight:800,fontSize:14,fontFamily:FONT,transition:"all .2s"}}><div style={{fontSize:32,marginBottom:6}}>{a.e}</div>{a.l}</button>)}</div></div><BtnPrimary onClick={save} disabled={loading||!sanitize(name)} full>{loading?"⏳ جاري الحفظ...":"✅ حفظ وابدأ التعلم"}</BtnPrimary></div></Card></div></div>);
 }
 
-// ─── Subject Home ─────────────────────────────────────────────────
-function SubjectHome({ child, onPickSubject, onBack, onViewProgress }) {
-  const stats = getStats(child);
-  return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-        <button onClick={() => { playSound("click"); onBack(); }} style={{ background: "rgba(255,255,255,0.07)", border: "none", color: C.text, borderRadius: 10, padding: "8px 14px", cursor: "pointer", fontSize: 13 }}>← رجوع</button>
-        <button onClick={() => { playSound("click"); onViewProgress(); }} style={{ background: "rgba(46,204,113,0.12)", border: "1px solid rgba(46,204,113,0.3)", color: C.green, borderRadius: 10, padding: "8px 14px", cursor: "pointer", fontSize: 13, fontWeight: 700 }}>📊 تقدمي</button>
+// ─── HOME SCREEN ──────────────────────────────────────────────────
+function HomeScreen({profile,children,onAddChild,onSelectChild,onTabChange}){
+  return(<div style={{minHeight:"100vh",background:C.bg,fontFamily:FONT,paddingBottom:90}}>
+    <style>{CSS}</style>
+    {/* Nav */}
+    <div style={{position:"sticky",top:0,zIndex:100,background:"rgba(249,240,235,.92)",backdropFilter:"blur(18px)",borderBottom:`1px solid rgba(200,90,0,.1)`,padding:"12px 18px",display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+      <StarsBadge/>
+      <div style={{textAlign:"center"}}><div style={{fontWeight:900,fontSize:18,color:C.orange}}>فُسحة</div><div style={{fontSize:11,color:C.muted,fontWeight:600}}>أهلاً، {profile?.parent_name}!</div></div>
+      <div style={{width:38,height:38,borderRadius:"50%",background:C.orangeLt,border:`2px solid rgba(200,90,0,.15)`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:20,overflow:"hidden",cursor:"pointer"}}>👦</div>
+    </div>
+    <div style={{padding:"18px 18px 0"}}>
+      {/* Title */}
+      <div style={{animation:"fadeUp .4s .05s ease both"}}>
+        <h1 style={{fontSize:30,fontWeight:900,color:C.text,lineHeight:1.2}}>ساحة التعليم</h1>
+        <p style={{color:C.muted,fontSize:13,fontWeight:600,marginTop:4}}>اختر مادتك المفضلة وانطلق في مغامرة جديدة!</p>
       </div>
-      <div style={{ textAlign: "center" }}>
-        <Avatar src={child.avatar} name={child.name} size={68} />
-        <h2 style={{ color: C.text, margin: "10px 0 0", fontWeight: 900, fontSize: 22 }}>أهلاً {child.name}! 👋</h2>
-        {stats && <div style={{ display: "flex", justifyContent: "center", gap: 10, marginTop: 10, flexWrap: "wrap" }}>
-          <Badge label={`🔥 ${stats.streak} يوم`} color={C.accent} />
-          <Badge label={`⭐ ${stats.avgPct}%`} color={C.green} />
-          <Badge label={`📚 ${stats.total} جلسة`} color={C.blue} />
-        </div>}
-      </div>
-      <p style={{ color: C.muted, textAlign: "center", direction: "rtl", margin: 0, fontSize: 14 }}>اختر المادة ✨</p>
-      <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-        {SUBJECTS.map(s => {
-          const ss = stats?.bySubject[s.id];
-          return (
-            <button key={s.id} onClick={() => { playSound("click"); onPickSubject(s); }} style={{ background: `linear-gradient(135deg,${s.color}15,${s.color}05)`, border: `2px solid ${s.color}33`, borderRadius: 20, padding: "18px 22px", cursor: "pointer", color: C.text, width: "100%", display: "flex", alignItems: "center", justifyContent: "space-between", transition: "all 0.25s", direction: "rtl", fontFamily: "inherit" }}
-              onMouseEnter={e => { e.currentTarget.style.borderColor = s.color; e.currentTarget.style.transform = "translateY(-2px)"; }}
-              onMouseLeave={e => { e.currentTarget.style.borderColor = s.color + "33"; e.currentTarget.style.transform = "none"; }}>
-              <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
-                <span style={{ fontSize: 34 }}>{s.emoji}</span>
-                <div style={{ textAlign: "right" }}>
-                  <div style={{ fontWeight: 800, fontSize: 18, color: s.color }}>{s.label}</div>
-                  <div style={{ fontSize: 12, color: C.muted }}>{ss ? `${ss.count} جلسة · أفضل ${ss.best}%` : s.desc}</div>
+
+      {/* Children selector or empty */}
+      {children.length===0?<div style={{marginTop:16,animation:"fadeUp .4s .1s ease both"}}><Card style={{padding:32,textAlign:"center",border:`2px dashed ${C.orange}33`}}><div style={{fontSize:52,marginBottom:12}}>👶</div><p style={{color:C.muted,fontSize:14,fontWeight:600}}>أضف طفلك الأول!</p><div style={{marginTop:16}}><BtnPrimary onClick={onAddChild}>+ إضافة طفل</BtnPrimary></div></Card></div>
+      :<div style={{marginTop:14,display:"flex",gap:8,flexWrap:"wrap",animation:"fadeUp .4s .08s ease both"}}>{children.map(child=><button key={child.id} onClick={()=>onSelectChild(child)} style={{background:C.card,border:`2px solid ${C.border}`,borderRadius:14,padding:"8px 14px",cursor:"pointer",fontFamily:FONT,fontWeight:800,fontSize:14,color:C.text,display:"flex",alignItems:"center",gap:8,boxShadow:C.shadow,transition:"all .2s"}} onMouseEnter={e=>{e.currentTarget.style.borderColor=C.orange;e.currentTarget.style.color=C.orange;}} onMouseLeave={e=>{e.currentTarget.style.borderColor=C.border;e.currentTarget.style.color=C.text;}}><span style={{width:30,height:30,borderRadius:"50%",background:`linear-gradient(135deg,${C.orange},#F28C00)`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:14,fontWeight:900,color:"white"}}>{child.name[0]}</span>{child.name}</button>)}<button onClick={onAddChild} style={{background:C.orangeLt,border:`2px dashed ${C.orange}44`,borderRadius:14,padding:"8px 14px",cursor:"pointer",fontFamily:FONT,fontWeight:800,fontSize:14,color:C.orange}}>+ إضافة</button></div>}
+
+      {/* Subject cards */}
+      <div style={{marginTop:18,display:"flex",flexDirection:"column",gap:14}}>
+        {SUBJECTS.map((s,idx)=><div key={s.id} style={{animation:`fadeUp .4s ${.12+idx*.08}s ease both`}}>
+          <Card onClick={()=>onTabChange("subjects",s)} style={{borderRight:`6px solid ${s.color}`,overflow:"visible"}}>
+            <div style={{display:"flex",alignItems:"stretch"}}>
+              <div style={{width:92,minHeight:110,background:`linear-gradient(135deg,${s.bg},${s.bg}CC)`,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
+                <span style={{fontSize:52,animation:`float ${2.8+idx*.3}s ease-in-out infinite`,animationDelay:`${idx*.2}s`,display:"inline-block"}}>{s.emoji}</span>
+              </div>
+              <div style={{padding:"14px 16px",flex:1}}>
+                <div style={{fontWeight:900,fontSize:18,color:s.color}}>{s.label}</div>
+                <div style={{margin:"5px 0 8px"}}><span style={{background:s.bg,color:s.color,borderRadius:99,padding:"2px 10px",fontSize:11,fontWeight:800}}>{s.level}</span></div>
+                <div style={{fontSize:11,color:C.muted,fontWeight:600,marginBottom:7}}>{s.id==="english"?"Your Progress":"تقدمك"}</div>
+                <div style={{display:"flex",alignItems:"center",gap:8}}>
+                  <div style={{flex:1}}><ProgBar pct={s.prog} color={s.progColor}/></div>
+                  <span style={{fontWeight:900,fontSize:13,color:s.color}}>{s.prog}٪</span>
                 </div>
               </div>
-              {ss && <div style={{ textAlign: "center" }}><div style={{ fontSize: 20, fontWeight: 900, color: s.color }}>{ss.avg}%</div><div style={{ fontSize: 11, color: C.muted }}>متوسط</div></div>}
-            </button>
-          );
-        })}
-      </div>
-    </div>
-  );
-}
-
-// ─── Level Selector ───────────────────────────────────────────────
-function LevelSelector({ subject, onSelect, onBack }) {
-  return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-        <button onClick={() => { playSound("click"); onBack(); }} style={{ background: "rgba(255,255,255,0.07)", border: "none", color: C.text, borderRadius: 10, padding: "8px 14px", cursor: "pointer", fontSize: 13 }}>← رجوع</button>
-        <span style={{ color: subject.color, fontWeight: 700, fontSize: 18 }}>{subject.emoji} {subject.label}</span>
-      </div>
-      <div style={{ textAlign: "center" }}>
-        <p style={{ color: C.text, fontWeight: 800, fontSize: 20, direction: "rtl", margin: 0 }}>اختر مستوى الصعوبة 🎯</p>
-        <p style={{ color: C.muted, fontSize: 13, direction: "rtl", marginTop: 6 }}>كل مستوى يولّد أسئلة مختلفة تماماً</p>
-      </div>
-      <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-        {LEVELS.map(lv => (
-          <button key={lv.id} onClick={() => { playSound("click"); onSelect(lv); }} style={{ background: `linear-gradient(135deg,${lv.color}18,${lv.color}06)`, border: `2px solid ${lv.color}44`, borderRadius: 20, padding: "20px 24px", cursor: "pointer", color: C.text, width: "100%", display: "flex", alignItems: "center", gap: 16, transition: "all 0.25s", direction: "rtl", fontFamily: "inherit" }}
-            onMouseEnter={e => { e.currentTarget.style.borderColor = lv.color; e.currentTarget.style.transform = "translateY(-2px)"; }}
-            onMouseLeave={e => { e.currentTarget.style.borderColor = lv.color + "44"; e.currentTarget.style.transform = "none"; }}>
-            <span style={{ fontSize: 40 }}>{lv.emoji}</span>
-            <div style={{ textAlign: "right" }}>
-              <div style={{ fontWeight: 900, fontSize: 20, color: lv.color }}>{lv.label}</div>
-              <div style={{ fontSize: 13, color: C.muted }}>{lv.desc}</div>
             </div>
-          </button>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-// ─── Loading ──────────────────────────────────────────────────────
-function LoadingScreen({ subject }) {
-  return (
-    <div style={{ textAlign: "center", padding: "48px 20px", display: "flex", flexDirection: "column", alignItems: "center", gap: 24 }}>
-      <div style={{ fontSize: 64, animation: "spin 2s linear infinite" }}>{subject.emoji}</div>
-      <div>
-        <p style={{ color: subject.color, fontWeight: 700, fontSize: 20, margin: 0, direction: "rtl" }}>Claude AI يحضّر أسئلتك…</p>
-        <p style={{ color: C.muted, fontSize: 13, marginTop: 6, direction: "rtl" }}>لحظة يا بطل! 🌟</p>
-      </div>
-      <div style={{ display: "flex", gap: 8 }}>
-        {[0, 1, 2].map(i => <div key={i} style={{ width: 10, height: 10, borderRadius: "50%", background: subject.color, animation: `pulse 1.2s ease-in-out ${i * 0.2}s infinite` }} />)}
-      </div>
-      <style>{`@keyframes spin{to{transform:rotate(360deg)}}@keyframes pulse{0%,100%{transform:scale(0.6);opacity:0.4}50%{transform:scale(1.2);opacity:1}}`}</style>
-    </div>
-  );
-}
-
-// ─── Quiz ─────────────────────────────────────────────────────────
-function QuizScreen({ subject, level, questions, onBack, onComplete }) {
-  const [idx, setIdx] = useState(0);
-  const [selected, setSelected] = useState(null);
-  const [score, setScore] = useState(0);
-  const [shake, setShake] = useState(false);
-  const [feedback, setFeedback] = useState(null);
-  const q = questions[idx];
-  const isRTL = subject.id !== "english";
-
-  function choose(i) {
-    if (selected !== null) return;
-    const correct = i === q.ans;
-    setSelected(i); setFeedback(correct ? "correct" : "wrong");
-    playSound(correct ? "correct" : "wrong");
-    if (correct) setScore(s => s + 1);
-    else { setShake(true); setTimeout(() => setShake(false), 500); }
-    setTimeout(() => {
-      setFeedback(null);
-      if (idx + 1 < questions.length) { setIdx(idx + 1); setSelected(null); }
-      else { playSound("complete"); onComplete(score + (correct ? 1 : 0)); }
-    }, 1400);
-  }
-
-  return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-        <button onClick={() => { playSound("click"); onBack(); }} style={{ background: "rgba(255,255,255,0.07)", border: "none", color: C.text, borderRadius: 10, padding: "8px 14px", cursor: "pointer", fontSize: 13 }}>← رجوع</button>
-        <span style={{ background: level.color + "22", color: level.color, borderRadius: 99, padding: "4px 10px", fontSize: 12, fontWeight: 700 }}>{level.emoji} {level.label}</span>
-        <span style={{ background: subject.color + "22", color: subject.color, borderRadius: 10, padding: "6px 12px", fontWeight: 700, fontSize: 13 }}>{idx + 1}/{questions.length}</span>
-      </div>
-      <ProgressBar pct={((idx + 1) / questions.length) * 100} color={subject.color} height={10} />
-      <Card style={{ textAlign: "center", animation: shake ? "shake 0.5s" : "none", border: `2px solid ${subject.color}33` }}>
-        {feedback && <div style={{ fontSize: 22, fontWeight: 900, marginBottom: 6, color: feedback === "correct" ? C.green : C.red, animation: "popIn 0.3s ease" }}>{feedback === "correct" ? "✅ ممتاز!" : "❌ حاول مرة أخرى!"}</div>}
-        <div style={{ fontSize: 58, marginBottom: 10 }}>{q.img}</div>
-        <p style={{ fontSize: 20, fontWeight: 700, color: C.text, direction: isRTL ? "rtl" : "ltr", lineHeight: 1.5, margin: 0 }}>{q.q}</p>
-      </Card>
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
-        {q.opts.map((opt, i) => {
-          let bg = C.card2, border = "2px solid rgba(255,255,255,0.07)", color = C.text;
-          if (selected !== null) {
-            if (i === q.ans) { bg = "#2ECC7120"; border = "2px solid #2ECC71"; color = C.green; }
-            else if (i === selected) { bg = "#E74C3C20"; border = "2px solid #E74C3C"; color = C.red; }
-          }
-          return <button key={i} onClick={() => choose(i)} style={{ background: bg, border, color, borderRadius: 16, padding: "16px 10px", fontSize: isRTL ? 18 : 16, fontWeight: 700, cursor: selected ? "default" : "pointer", transition: "all 0.25s", direction: isRTL ? "rtl" : "ltr", fontFamily: "inherit", minHeight: 58 }}>{opt}</button>;
-        })}
-      </div>
-      <style>{`@keyframes shake{0%,100%{transform:translateX(0)}25%,75%{transform:translateX(-8px)}50%{transform:translateX(8px)}}@keyframes popIn{from{transform:scale(0.5);opacity:0}to{transform:scale(1);opacity:1}}`}</style>
-    </div>
-  );
-}
-
-// ─── Result ───────────────────────────────────────────────────────
-function ResultScreen({ score, total, subject, level, child, onRetry, onHome }) {
-  const [shareMsg, setShareMsg] = useState(null);
-  const pct = Math.round((score / total) * 100);
-  const stars = pct === 100 ? 5 : pct >= 80 ? 4 : pct >= 60 ? 3 : pct >= 40 ? 2 : 1;
-  const msg = pct === 100 ? "مثالي! أنت نجم! 🌟" : pct >= 60 ? "أحسنت! استمر! 💪" : "لا تستسلم! 🔄";
-
-  async function handleShare() {
-    const text = buildShareText(child.name, subject, level, score, total);
-    const res = await doShare(text);
-    setShareMsg(res === "copied" ? "✅ تم النسخ! الصقها في واتساب" : res === "shared" ? "✅ تمت المشاركة!" : "❌ تعذرت المشاركة");
-    setTimeout(() => setShareMsg(null), 4000);
-  }
-
-  return (
-    <div style={{ textAlign: "center", display: "flex", flexDirection: "column", alignItems: "center", gap: 20 }}>
-      <div style={{ fontSize: 72, animation: "popIn 0.5s ease" }}>{pct === 100 ? "🏆" : pct >= 60 ? "🎉" : "💡"}</div>
-      <Stars count={stars} size={26} />
-      <h2 style={{ fontSize: 22, color: subject.color, margin: 0, direction: "rtl" }}>{msg}</h2>
-      <Card style={{ padding: "20px 30px", border: `2px solid ${subject.color}44`, width: "100%" }}>
-        <div style={{ display: "flex", justifyContent: "space-around", alignItems: "center" }}>
-          <div style={{ textAlign: "center" }}>
-            <div style={{ fontSize: 40, fontWeight: 900, color: subject.color }}>{score}/{total}</div>
-            <div style={{ color: C.muted, fontSize: 13, direction: "rtl" }}>إجابة صحيحة</div>
-          </div>
-          <div style={{ width: 1, height: 50, background: "rgba(255,255,255,0.1)" }} />
-          <div style={{ textAlign: "center" }}>
-            <div style={{ fontSize: 40, fontWeight: 900, color: level.color }}>{pct}%</div>
-            <Badge label={`${level.emoji} ${level.label}`} color={level.color} />
-          </div>
-        </div>
-      </Card>
-      <p style={{ color: C.muted, fontSize: 13, direction: "rtl", margin: 0 }}>✅ تم حفظ نتيجتك تلقائياً</p>
-      <button onClick={handleShare} style={{ background: "linear-gradient(135deg,#25D366,#128C7E)", border: "none", color: "#fff", borderRadius: 14, padding: "14px 28px", fontWeight: 700, fontSize: 16, cursor: "pointer", fontFamily: "inherit", width: "100%", display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}>
-        📤 شارك النتيجة مع الأهل
-      </button>
-      {shareMsg && <div style={{ background: "rgba(46,204,113,0.15)", border: "1px solid rgba(46,204,113,0.3)", borderRadius: 12, padding: "10px 20px", color: C.green, fontWeight: 700, fontSize: 14, width: "100%", direction: "rtl" }}>{shareMsg}</div>}
-      <div style={{ display: "flex", gap: 10, width: "100%" }}>
-        <Btn onClick={onRetry} style={{ flex: 1 }}>🔄 مجدداً</Btn>
-        <Btn onClick={onHome} outline color={C.muted} style={{ flex: 1, color: C.muted }}>🏠 الرئيسية</Btn>
-      </div>
-      <style>{`@keyframes popIn{from{transform:scale(0.5);opacity:0}to{transform:scale(1);opacity:1}}`}</style>
-    </div>
-  );
-}
-
-// ─── Child Progress ───────────────────────────────────────────────
-function ChildProgress({ child, onBack }) {
-  const stats = getStats(child);
-  if (!stats) return (
-    <div style={{ textAlign: "center", padding: 40, display: "flex", flexDirection: "column", alignItems: "center", gap: 16 }}>
-      <div style={{ fontSize: 52 }}>📭</div>
-      <p style={{ color: C.muted, direction: "rtl" }}>لم تبدأ أي جلسة بعد!</p>
-      <Btn onClick={onBack}>ارجع وابدأ التعلم</Btn>
-    </div>
-  );
-  return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-        <button onClick={() => { playSound("click"); onBack(); }} style={{ background: "rgba(255,255,255,0.07)", border: "none", color: C.text, borderRadius: 10, padding: "8px 14px", cursor: "pointer", fontSize: 13 }}>← رجوع</button>
-        <Avatar src={child.avatar} name={child.name} size={36} />
-        <h2 style={{ color: C.text, margin: 0, fontWeight: 800, direction: "rtl" }}>تقدم {child.name}</h2>
-      </div>
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10 }}>
-        {[{ l: "جلسات", v: stats.total, c: C.blue }, { l: "متوسط", v: stats.avgPct + "%", c: C.accent }, { l: "🔥 سلسلة", v: stats.streak, c: C.green }].map(x => (
-          <Card key={x.l} style={{ textAlign: "center", padding: "14px 8px" }}>
-            <div style={{ fontSize: 22, fontWeight: 900, color: x.c }}>{x.v}</div>
-            <div style={{ fontSize: 11, color: C.muted, marginTop: 2, direction: "rtl" }}>{x.l}</div>
           </Card>
-        ))}
+        </div>)}
       </div>
-      <Card>
-        <h3 style={{ color: C.text, margin: "0 0 14px", direction: "rtl", fontWeight: 800, fontSize: 16 }}>📊 حسب المادة</h3>
-        <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-          {SUBJECTS.map(s => {
-            const ss = stats.bySubject[s.id];
-            return (
-              <div key={s.id}>
-                <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6, direction: "rtl" }}>
-                  <span style={{ color: C.text, fontWeight: 700, fontSize: 14 }}>{s.emoji} {s.label}</span>
-                  {ss ? <span style={{ color: s.color, fontWeight: 700, fontSize: 13 }}>{ss.avg}% · {ss.count} جلسة</span> : <span style={{ color: C.muted, fontSize: 12 }}>لم يبدأ</span>}
-                </div>
-                <ProgressBar pct={ss ? ss.avg : 0} color={s.color} />
-              </div>
-            );
-          })}
+
+      {/* Daily Challenge */}
+      <div style={{marginTop:14,background:`linear-gradient(135deg,${C.yellowLt},#FFF3C0)`,border:`2px solid rgba(245,184,0,.3)`,borderRadius:24,padding:18,display:"flex",alignItems:"center",gap:14,animation:"fadeUp .4s .4s ease both"}}>
+        <div style={{width:50,height:50,background:`linear-gradient(135deg,${C.yellow},#FFD740)`,borderRadius:"50%",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,boxShadow:`0 4px 14px rgba(245,184,0,.35)`,animation:"pulse 2s ease-in-out infinite"}}>🏆</div>
+        <div style={{flex:1,direction:"rtl"}}>
+          <div style={{fontWeight:900,fontSize:16,color:C.text}}>تحدي اليوم</div>
+          <p style={{fontSize:12,color:C.muted,marginTop:2}}>أكمل ٣ دروس للحصول على وسام "العبقري"</p>
+          <div style={{marginTop:10}}><BtnPrimary onClick={()=>onTabChange("journey")} style={{fontSize:14,padding:"10px 20px",borderRadius:14}}>ابدأ التحدي الآن</BtnPrimary></div>
         </div>
-      </Card>
-      <Card>
-        <h3 style={{ color: C.text, margin: "0 0 12px", direction: "rtl", fontWeight: 800, fontSize: 16 }}>🕐 آخر الجلسات</h3>
-        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-          {stats.recent.map((s, i) => {
-            const subj = SUBJECTS.find(x => x.id === s.subjectId);
-            const lv = LEVELS.find(x => x.id === s.levelId);
-            const st = s.pct === 100 ? 5 : s.pct >= 80 ? 4 : s.pct >= 60 ? 3 : s.pct >= 40 ? 2 : 1;
-            return (
-              <div key={i} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 14px", background: C.bg, borderRadius: 12, direction: "rtl" }}>
-                <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                  <span style={{ fontSize: 20 }}>{subj?.emoji}</span>
-                  <div>
-                    <div style={{ color: C.text, fontWeight: 700, fontSize: 14 }}>{subj?.label}</div>
-                    <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
-                      {lv && <span style={{ background: lv.color + "22", color: lv.color, borderRadius: 99, padding: "1px 8px", fontSize: 11, fontWeight: 700 }}>{lv.emoji} {lv.label}</span>}
-                      <span style={{ color: C.muted, fontSize: 11 }}>{new Date(s.date).toLocaleDateString("ar-SA")}</span>
-                    </div>
-                  </div>
-                </div>
-                <div style={{ textAlign: "center" }}>
-                  <div style={{ color: subj?.color, fontWeight: 800, fontSize: 15 }}>{s.score}/{s.total}</div>
-                  <Stars count={st} />
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      </Card>
+      </div>
     </div>
-  );
+    <TabBar active="home" onTab={onTabChange}/>
+  </div>);
 }
 
-// ─── Parent Dashboard ─────────────────────────────────────────────
-function ParentDashboard({ progress, onBack }) {
-  const children = Object.entries(progress);
-  return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-        <button onClick={() => { playSound("click"); onBack(); }} style={{ background: "rgba(255,255,255,0.07)", border: "none", color: C.text, borderRadius: 10, padding: "8px 14px", cursor: "pointer", fontSize: 13 }}>← رجوع</button>
-        <h2 style={{ color: C.text, margin: 0, fontWeight: 800, direction: "rtl" }}>📊 لوحة تحكم الأهل</h2>
-      </div>
-      {children.length === 0 ? <div style={{ textAlign: "center", padding: 40 }}><div style={{ fontSize: 52 }}>👨‍👩‍👧</div><p style={{ color: C.muted, direction: "rtl" }}>لا يوجد أطفال مسجلين بعد</p></div>
-        : children.map(([id, child]) => {
-          const stats = getStats(child);
-          return (
-            <Card key={id} style={{ border: "1px solid rgba(245,168,0,0.15)" }}>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", direction: "rtl", marginBottom: 14 }}>
-                <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-                  <Avatar src={child.avatar} name={child.name} size={52} />
-                  <div>
-                    <div style={{ fontWeight: 800, fontSize: 17, color: C.text }}>{child.name}</div>
-                    <div style={{ color: C.muted, fontSize: 12 }}>{child.age === "young" ? "٣-٦ سنوات" : "٦-١٠ سنوات"}</div>
-                  </div>
-                </div>
-                {stats && <Badge label={`🔥 ${stats.streak} يوم`} color={C.accent} />}
-              </div>
-              {stats ? (
-                <>
-                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 14 }}>
-                    <div style={{ background: C.bg, borderRadius: 12, padding: "10px 14px", textAlign: "center" }}>
-                      <div style={{ fontSize: 20, fontWeight: 900, color: C.accent }}>{stats.total}</div>
-                      <div style={{ fontSize: 11, color: C.muted, direction: "rtl" }}>إجمالي الجلسات</div>
-                    </div>
-                    <div style={{ background: C.bg, borderRadius: 12, padding: "10px 14px", textAlign: "center" }}>
-                      <div style={{ fontSize: 20, fontWeight: 900, color: C.green }}>{stats.avgPct}%</div>
-                      <div style={{ fontSize: 11, color: C.muted, direction: "rtl" }}>متوسط الدرجات</div>
-                    </div>
-                  </div>
-                  <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                    {SUBJECTS.map(s => {
-                      const ss = stats.bySubject[s.id];
-                      return (
-                        <div key={s.id} style={{ direction: "rtl" }}>
-                          <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, marginBottom: 4 }}>
-                            <span style={{ color: C.muted }}>{s.emoji} {s.label}</span>
-                            <span style={{ color: ss ? s.color : C.muted, fontWeight: 700 }}>{ss ? `${ss.avg}%` : "—"}</span>
-                          </div>
-                          <ProgressBar pct={ss ? ss.avg : 0} color={s.color} height={6} />
-                        </div>
-                      );
-                    })}
-                  </div>
-                </>
-              ) : <p style={{ color: C.muted, fontSize: 13, direction: "rtl", textAlign: "center", margin: 0 }}>لم يبدأ أي جلسة بعد</p>}
-            </Card>
-          );
-        })}
+// ─── JOURNEY (Subject Menu) ───────────────────────────────────────
+function JourneyScreen({child,onPickLesson,onPickQuiz,onBack,onTabChange}){
+  const subject=SUBJECTS[0]; // Arabic as default journey
+  const letters=ARABIC_LETTERS;
+  const completedCount=1; // أ completed
+  return(<div style={{minHeight:"100vh",background:C.bg,fontFamily:FONT,paddingBottom:90}}>
+    <style>{CSS}</style>
+    {/* Nav */}
+    <div style={{position:"sticky",top:0,zIndex:100,background:"rgba(249,240,235,.92)",backdropFilter:"blur(18px)",borderBottom:`1px solid rgba(200,90,0,.1)`,padding:"12px 18px",display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+      <StarsBadge/>
+      <div style={{textAlign:"center"}}><div style={{fontWeight:900,fontSize:16,color:C.orange}}>فُسحة</div><div style={{fontSize:11,color:C.muted,fontWeight:600}}>تقدمك في الرحلة</div></div>
+      <BackBtn onClick={onBack} label="← رجوع"/>
     </div>
-  );
-}
-
-// ─── App ──────────────────────────────────────────────────────────
-export default function App() {
-  const [progress, setProgress] = useState(loadProgress);
-  const [screen, setScreen] = useState("welcome");
-  const [activeChildId, setActiveChildId] = useState(null);
-  const [activeSubject, setActiveSubject] = useState(null);
-  const [activeLevel, setActiveLevel] = useState(null);
-  const [questions, setQuestions] = useState([]);
-  const [finalScore, setFinalScore] = useState(0);
-  const [error, setError] = useState(null);
-  const activeChild = progress[activeChildId];
-
-  const fetchQuestions = useCallback(async (subject, level) => {
-    // Validate subject and level
-    if (!SUBJECTS.find(s => s.id === subject.id)) return;
-    if (!LEVELS.find(l => l.id === level.id)) return;
-
-    setActiveSubject(subject); setActiveLevel(level);
-    setScreen("loading"); setError(null);
-
-    const prompt = buildPrompt(subject.id, activeChild?.age || "old", level.id);
-    if (!prompt) { setError("خطأ في بناء الطلب"); setScreen("error"); return; }
-
-    try {
-      const res = await fetch("/api/ask", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          model: "claude-sonnet-4-20250514",
-          max_tokens: 1000,
-          messages: [{ role: "user", content: prompt }],
-        }),
-      });
-
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const data = await res.json();
-
-      // Validate response structure
-      if (!data?.content?.[0]?.text) throw new Error("Empty response");
-      const raw = data.content[0].text;
-
-      // Strip any markdown and parse JSON safely
-      const jsonStr = raw.replace(/```json|```/gi, "").trim();
-      if (jsonStr.length > 10000) throw new Error("Response too large");
-
-      const parsed = JSON.parse(jsonStr);
-
-      // Security: validate every question
-      if (!validateQuestions(parsed)) throw new Error("Invalid question format");
-
-      setQuestions(parsed);
-      setScreen("quiz");
-    } catch {
-      setError("مشكلة في توليد الأسئلة. تأكد من الاتصال.");
-      setScreen("error");
-    }
-  }, [activeChild]);
-
-  function handleAddChild(id, child) {
-    if (Object.keys(progress).length >= MAX_CHILDREN) return;
-    const updated = { ...progress, [id]: child };
-    setProgress(updated); saveProgress(updated);
-    setActiveChildId(id); setScreen("subjects");
-  }
-
-  function handleComplete(score) {
-    setFinalScore(score);
-    setProgress(prev => recordSession(prev, activeChildId, activeSubject.id, activeLevel.id, score, questions.length));
-    setScreen("result");
-  }
-
-  return (
-    <div style={{ minHeight: "100vh", background: C.bg, fontFamily: "'Tajawal','Cairo','Segoe UI',sans-serif", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: 20 }}>
-      <div style={{ width: "100%", maxWidth: 480, background: C.card, borderRadius: 32, padding: 26, boxShadow: "0 32px 100px rgba(0,0,0,0.6)", border: "1px solid rgba(255,255,255,0.05)" }}>
-        {screen === "welcome"       && <WelcomeScreen progress={progress} onSelectChild={id => { setActiveChildId(id); setScreen("subjects"); }} onAddChild={() => setScreen("addChild")} onParentDash={() => setScreen("parentDash")} />}
-        {screen === "addChild"      && <AddChildScreen onSave={handleAddChild} onBack={() => setScreen("welcome")} currentCount={Object.keys(progress).length} />}
-        {screen === "subjects"      && activeChild && <SubjectHome child={activeChild} onPickSubject={s => { setActiveSubject(s); setScreen("levels"); }} onBack={() => setScreen("welcome")} onViewProgress={() => setScreen("childProgress")} />}
-        {screen === "levels"        && activeSubject && <LevelSelector subject={activeSubject} onSelect={lv => fetchQuestions(activeSubject, lv)} onBack={() => setScreen("subjects")} />}
-        {screen === "loading"       && activeSubject && <LoadingScreen subject={activeSubject} />}
-        {screen === "quiz"          && questions.length > 0 && activeSubject && activeLevel && <QuizScreen subject={activeSubject} level={activeLevel} questions={questions} onBack={() => setScreen("levels")} onComplete={handleComplete} />}
-        {screen === "result"        && activeSubject && activeLevel && activeChild && <ResultScreen score={finalScore} total={questions.length} subject={activeSubject} level={activeLevel} child={activeChild} onRetry={() => fetchQuestions(activeSubject, activeLevel)} onHome={() => setScreen("subjects")} />}
-        {screen === "childProgress" && activeChild && <ChildProgress child={activeChild} onBack={() => setScreen("subjects")} />}
-        {screen === "parentDash"    && <ParentDashboard progress={progress} onBack={() => setScreen("welcome")} />}
-        {screen === "error"         && (
-          <div style={{ textAlign: "center", padding: 32, display: "flex", flexDirection: "column", alignItems: "center", gap: 20 }}>
-            <div style={{ fontSize: 56 }}>😕</div>
-            <p style={{ color: C.red, fontWeight: 700, direction: "rtl" }}>{error}</p>
-            <div style={{ display: "flex", gap: 10 }}>
-              <Btn onClick={() => fetchQuestions(activeSubject, activeLevel)}>🔄 حاول مجدداً</Btn>
-              <Btn onClick={() => setScreen("subjects")} outline color={C.muted} style={{ color: C.muted }}>رجوع</Btn>
+    {/* Progress strip */}
+    <div style={{padding:"12px 18px"}}>
+      <div style={{display:"flex",justifyContent:"space-between",marginBottom:6}}><span style={{fontSize:12,fontWeight:800,color:C.orange}}>اللغة العربية</span><span style={{fontSize:12,fontWeight:700,color:C.muted}}>{completedCount} من {letters.length}</span></div>
+      <ProgBar pct={(completedCount/letters.length)*100} color={C.orange}/>
+    </div>
+    <div style={{padding:"8px 18px",display:"flex",flexDirection:"column",gap:12}}>
+      {letters.map((l,idx)=>{
+        const isActive=idx===completedCount;const isDone=idx<completedCount;const isLocked=idx>completedCount;
+        return <div key={l.id} style={{animation:`fadeUp .4s ${idx*.07}s ease both`}}>
+          <div style={{background:C.card,borderRadius:20,border:`2px solid ${isActive?l.color:isDone?"rgba(26,122,110,.3)":C.border}`,boxShadow:isActive?`0 8px 28px ${l.color}33`:C.shadow,padding:"14px 16px",cursor:isLocked?"default":"pointer",opacity:isLocked?.55:1,position:"relative",transition:"all .25s"}}
+            onClick={()=>{if(!isLocked){playSound("click");if(isActive||isDone)onPickLesson(l);}}}
+            onMouseEnter={e=>{if(!isLocked)e.currentTarget.style.transform="translateY(-2px)";}}
+            onMouseLeave={e=>e.currentTarget.style.transform="translateY(0)"}>
+            {isActive&&<div style={{background:`linear-gradient(135deg,${C.orange},#F28C00)`,color:"white",borderRadius:99,fontSize:11,fontWeight:800,padding:"3px 10px",display:"inline-block",marginBottom:8}}>📍 أنت هنا الآن!</div>}
+            {isLocked&&<div style={{position:"absolute",top:-8,right:-8,width:26,height:26,borderRadius:"50%",background:C.muted,display:"flex",alignItems:"center",justifyContent:"center",fontSize:13}}>🔒</div>}
+            {isDone&&<div style={{position:"absolute",top:-8,right:-8,width:26,height:26,borderRadius:"50%",background:C.green,display:"flex",alignItems:"center",justifyContent:"center",fontSize:13,animation:"checkPop .4s ease both"}}>✅</div>}
+            <div style={{display:"flex",alignItems:"center",gap:14}}>
+              <LetterCircle letter={l.letter} size={48} color={isLocked?C.muted:l.color}/>
+              <div style={{flex:1}}>
+                <div style={{fontWeight:900,fontSize:16,color:isLocked?C.muted:C.text}}>{l.name}</div>
+                <div style={{fontSize:12,color:C.muted,fontWeight:600}}>{isDone?"✓ مكتمل!":isActive?"ابدأ المغامرة":"مقفول"}</div>
+              </div>
+              {isDone&&<span style={{fontSize:16}}>⭐⭐⭐</span>}
+              {isActive&&<button onClick={e=>{e.stopPropagation();playSound("click");onPickLesson(l);}} style={{background:`linear-gradient(135deg,${C.green},#1FA090)`,color:"white",border:"none",borderRadius:99,padding:"9px 18px",fontWeight:800,fontSize:13,cursor:"pointer",fontFamily:FONT,boxShadow:`0 4px 12px rgba(26,122,110,.35)`}}>▶ ابدأ</button>}
             </div>
           </div>
-        )}
+        </div>;
+      })}
+      {/* AI Quiz entry */}
+      <div style={{animation:"fadeUp .4s .6s ease both"}}>
+        <Card onClick={()=>onPickQuiz()} style={{padding:"16px 18px",border:`2px solid rgba(124,58,237,.2)`}}>
+          <div style={{display:"flex",alignItems:"center",gap:14,direction:"rtl"}}>
+            <div style={{width:48,height:48,borderRadius:14,background:"rgba(124,58,237,.1)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:26}}>🎮</div>
+            <div style={{textAlign:"right"}}><div style={{fontWeight:900,fontSize:16,color:C.text}}>اختبار AI تفاعلي</div><div style={{fontSize:12,color:C.muted,fontWeight:600}}>أسئلة مولّدة بالذكاء الاصطناعي</div></div>
+            <div style={{marginRight:"auto",color:"#7C3AED",fontSize:18}}>←</div>
+          </div>
+        </Card>
       </div>
     </div>
-  );
+    <TabBar active="journey" onTab={onTabChange}/>
+  </div>);
+}
+
+// ─── LESSON SCREEN ────────────────────────────────────────────────
+function LessonScreen({lesson,subject,onComplete,onBack}){
+  const [step,setStep]=useState(0);
+  const totalSteps=lesson.words.length+2;const isIntro=step===0;const isSummary=step===totalSteps-1;const word=lesson.words[step-1];const lang=subject?.id==="english"?"en":"ar";
+  return(<div style={{minHeight:"100vh",background:C.bg,fontFamily:FONT,paddingBottom:90}}>
+    <style>{CSS}</style>
+    {/* Nav */}
+    <div style={{position:"sticky",top:0,zIndex:100,background:"rgba(249,240,235,.92)",backdropFilter:"blur(18px)",borderBottom:`1px solid rgba(200,90,0,.1)`,padding:"12px 18px",display:"flex",alignItems:"center",gap:10}}>
+      <button onClick={()=>{playSound("click");onBack();}} style={{width:36,height:36,borderRadius:"50%",background:C.bg2,border:"none",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",fontSize:18}}>✕</button>
+      <div style={{flex:1}}>
+        <div style={{display:"flex",justifyContent:"space-between",marginBottom:5}}><span style={{fontSize:11,fontWeight:800,color:C.orange}}>الخطوة {step+1} من {totalSteps}</span><span style={{fontSize:12}}>⭐</span></div>
+        <ProgBar pct={((step+1)/totalSteps)*100} color={C.green}/>
+      </div>
+      <StarsBadge/>
+    </div>
+    <div style={{padding:"16px 18px",display:"flex",flexDirection:"column",gap:14}}>
+      {/* Intro step */}
+      {isIntro&&<>
+        <Card style={{animation:"fadeUp .4s ease both",position:"relative",overflow:"visible"}}>
+          <div style={{background:`linear-gradient(135deg,${C.orangeLt},#FFF8F4)`,padding:28,display:"flex",flexDirection:"column",alignItems:"center",gap:16}}>
+            <div style={{position:"relative"}}>
+              <div style={{width:160,height:160,borderRadius:24,background:`linear-gradient(135deg,#D4A843,#C08020)`,display:"flex",alignItems:"center",justifyContent:"center",transform:"rotate(2deg)",boxShadow:"0 12px 40px rgba(0,0,0,.15)"}}>
+                <span style={{fontSize:86,animation:"float 3s ease-in-out infinite",display:"inline-block",filter:"drop-shadow(0 6px 12px rgba(0,0,0,.2))"}}>{lesson.words[0]?.emoji||"🦁"}</span>
+              </div>
+              <LetterCircle letter={lesson.letter} size={58} color={lesson.color} style={{position:"absolute",top:-10,right:-10,animation:"popIn .6s .3s cubic-bezier(.175,.885,.32,1.275) both"}}/>
+            </div>
+            <div style={{background:"white",border:`1.5px solid ${C.border}`,borderRadius:99,padding:"6px 14px",display:"flex",alignItems:"center",gap:6,boxShadow:"0 4px 14px rgba(0,0,0,.08)",animation:"float 2.5s ease-in-out infinite"}}>
+              <span>😊</span><span style={{fontSize:12,fontWeight:700,color:C.muted}}>أحسنت! هذا {lesson.words[0]?.word}</span>
+            </div>
+          </div>
+          <div style={{padding:"18px 22px",background:"white"}}>
+            <div className="shimmer-text" style={{fontSize:62,fontWeight:900,lineHeight:1,textAlign:"center",marginBottom:6,fontFamily:"Cairo,sans-serif"}}>{lesson.words[0]?.word}</div>
+            <p style={{textAlign:"center",color:C.muted,fontSize:14,fontWeight:600}}>حرف <span style={{color:lesson.color,fontWeight:900}}>{lesson.name}</span> في بداية الكلمة</p>
+            <div style={{display:"flex",gap:10,justifyContent:"center",margin:"16px 0"}} dir="rtl">
+              {[...lesson.words[0]?.word.replace(/[\u064B-\u065F]/g,"")].map((ch,i)=><SpellBlock key={i} letter={ch} active={i===0} delay={i*.1}/>)}
+            </div>
+            <div style={{display:"flex",flexDirection:"column",gap:10}}>
+              <BtnGreen onClick={()=>{speak(lesson.words[0]?.word,lang);}} style={{width:"100%",justifyContent:"center",fontSize:17,padding:14}}>🔊 اسمع</BtnGreen>
+              <BtnOutline onClick={()=>{}} style={{width:"100%",justifyContent:"center",fontSize:15,padding:12}}>✏️ اكتب</BtnOutline>
+            </div>
+          </div>
+        </Card>
+        {/* Tip */}
+        <div style={{background:`linear-gradient(135deg,${C.greenLt},#F0FFF8)`,border:`2px solid rgba(26,122,110,.15)`,borderRadius:20,padding:"14px 16px",display:"flex",alignItems:"center",gap:12,animation:"fadeUp .4s .2s ease both"}}>
+          <div style={{width:40,height:40,background:"white",borderRadius:12,display:"flex",alignItems:"center",justifyContent:"center",boxShadow:C.shadow,flexShrink:0}}>💡</div>
+          <div dir="rtl"><div style={{fontWeight:900,color:C.green,fontSize:13,marginBottom:3}}>نصيحة سريعة</div><p style={{fontSize:12,color:C.muted,lineHeight:1.5}}>الصوت: <strong style={{color:lesson.color}}>{lesson.sound}</strong> — افتح فمك جيداً!</p></div>
+        </div>
+      </>}
+      {/* Word steps */}
+      {!isIntro&&!isSummary&&word&&<Card style={{animation:"popIn .45s ease both"}}>
+        <div style={{background:`linear-gradient(135deg,${C.orangeLt},#FFF8F4)`,padding:24,textAlign:"center"}}>
+          <p style={{color:C.muted,fontSize:12,fontWeight:700,marginBottom:12}}>كلمة {step} من {lesson.words.length}</p>
+          <div style={{fontSize:88,marginBottom:12,animation:"popIn .4s ease both",display:"block"}}>{word.emoji}</div>
+          <div style={{display:"flex",alignItems:"center",justifyContent:"center",gap:12,marginBottom:12}}>
+            <button onClick={()=>speak(word.word,lang)} style={{width:42,height:42,borderRadius:"50%",background:`linear-gradient(135deg,${C.orange},#F28C00)`,border:"none",cursor:"pointer",fontSize:18,display:"flex",alignItems:"center",justifyContent:"center",boxShadow:`0 4px 12px ${C.orange}44`}}>🔊</button>
+            <span style={{fontSize:40,fontWeight:900,color:lesson.color,fontFamily:"Cairo,sans-serif"}}>{word.word}</span>
+          </div>
+          <span style={{background:C.greenLt,color:C.green,border:`1.5px solid rgba(26,122,110,.2)`,borderRadius:99,padding:"4px 14px",fontSize:13,fontWeight:800}}>{word.meaning}</span>
+        </div>
+        <div style={{padding:"14px 18px",background:"white",textAlign:"center"}}>
+          <p style={{fontSize:13,color:C.muted,fontWeight:600}}>حرف <span style={{color:lesson.color,fontWeight:900,fontSize:18}}>{lesson.letter}</span> في الكلمة</p>
+        </div>
+      </Card>}
+      {/* Summary */}
+      {isSummary&&<Card style={{textAlign:"center",padding:40,animation:"popIn .5s ease both",border:`3px solid rgba(26,122,110,.25)`}}><div style={{fontSize:72,marginBottom:12}}>🎉</div><h2 style={{color:C.green,fontWeight:900,fontSize:24,marginBottom:8}}>أحسنت! أنهيت الدرس!</h2><p style={{color:C.muted,fontSize:14,fontWeight:600}}>هل أنت جاهز للاختبار؟ 💪</p></Card>}
+      {/* Nav buttons */}
+      <div style={{display:"flex",gap:10,marginTop:4}}>
+        {step>0&&<BtnOutline onClick={()=>setStep(s=>s-1)} style={{flex:1}}>← السابق</BtnOutline>}
+        {!isSummary?<BtnGreen onClick={()=>{playSound("click");setStep(s=>s+1);}} style={{flex:1,justifyContent:"center"}}>التالي →</BtnGreen>:<BtnPrimary onClick={onComplete} style={{flex:1}}>🎯 ابدأ الاختبار</BtnPrimary>}
+      </div>
+    </div>
+  </div>);
+}
+
+// ─── LEVEL SELECTOR ───────────────────────────────────────────────
+function LevelSelector({subject,onSelect,onBack}){
+  return(<div style={{minHeight:"100vh",background:C.bg,fontFamily:FONT,padding:24}}>
+    <style>{CSS}</style>
+    <div style={{maxWidth:400,margin:"0 auto",paddingTop:16}}>
+      <BackBtn onClick={onBack}/>
+      <div style={{display:"flex",alignItems:"center",gap:8,margin:"16px 0"}}><span style={{fontSize:26}}>{subject?.emoji||"📖"}</span><h2 style={{fontWeight:900,fontSize:20,color:subject?.color||C.orange}}>{subject?.label}</h2></div>
+      <div style={{display:"flex",flexDirection:"column",gap:12}}>
+        {LEVELS.map((lv,i)=><div key={lv.id} style={{animation:`fadeUp .4s ${i*.1}s ease both`}}>
+          <button onClick={()=>{playSound("click");onSelect(lv);gaEvent("select_level",{level:lv.id});}} style={{background:`linear-gradient(135deg,${lv.color}14,${lv.bg})`,border:`2.5px solid ${lv.color}33`,borderRadius:22,padding:"18px 20px",cursor:"pointer",color:C.text,display:"flex",alignItems:"center",gap:14,direction:"rtl",fontFamily:FONT,transition:"all .25s",width:"100%",boxShadow:C.shadow}} onMouseEnter={e=>{e.currentTarget.style.borderColor=lv.color;e.currentTarget.style.transform="translateY(-3px)";e.currentTarget.style.boxShadow=`0 8px 24px ${lv.color}33`;}} onMouseLeave={e=>{e.currentTarget.style.borderColor=lv.color+"33";e.currentTarget.style.transform="translateY(0)";e.currentTarget.style.boxShadow=C.shadow;}}>
+            <div style={{width:52,height:52,borderRadius:16,background:lv.color+"20",display:"flex",alignItems:"center",justifyContent:"center",fontSize:28,flexShrink:0}}>{lv.emoji}</div>
+            <div style={{textAlign:"right"}}><div style={{fontWeight:900,fontSize:20,color:lv.color}}>{lv.label}</div><div style={{fontSize:12,color:C.muted,fontWeight:600}}>{lv.id==="easy"?"للمبتدئين — بسيطة":lv.id==="medium"?"مستوى متوسط":"للمتقدمين — تحدٍّ حقيقي!"}</div></div>
+          </button>
+        </div>)}
+      </div>
+    </div>
+  </div>);
+}
+
+// ─── LOADING SCREEN ───────────────────────────────────────────────
+function LoadingScreen({subject}){return(<div style={{minHeight:"100vh",background:C.bg,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:24,fontFamily:FONT}}><style>{CSS}</style><div style={{width:96,height:96,borderRadius:24,background:`linear-gradient(135deg,${subject?.color||C.orange},${subject?.color||C.orange}BB)`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:48,animation:"spin 2s linear infinite",boxShadow:`0 12px 40px ${subject?.color||C.orange}44`}}>{subject?.emoji||"📖"}</div><div style={{textAlign:"center"}}><p style={{fontWeight:900,fontSize:20,color:C.text}}>Claude AI يحضّر أسئلتك…</p><p style={{color:C.muted,fontSize:14,fontWeight:600,marginTop:6}}>لحظة يا بطل! 🌟</p></div><div style={{display:"flex",gap:8}}>{[0,1,2].map(i=><div key={i} style={{width:10,height:10,borderRadius:"50%",background:subject?.color||C.orange,animation:`pulse 1.2s ease-in-out ${i*.2}s infinite`}}/>)}</div></div>);}
+
+// ─── QUIZ SCREEN ─────────────────────────────────────────────────
+function QuizScreen({subject,level,questions,onBack,onComplete}){
+  const [idx,setIdx]=useState(0);const [selected,setSelected]=useState(null);const [score,setScore]=useState(0);const [shake,setShake]=useState(false);const [feedback,setFeedback]=useState(null);
+  const q=questions[idx];const isRTL=subject?.id!=="english";const lang=subject?.id==="english"?"en":"ar";
+  function choose(i){if(selected!==null)return;const correct=i===q.ans;setSelected(i);setFeedback(correct?"correct":"wrong");playSound(correct?"correct":"wrong");if(correct){setScore(s=>s+1);speak("ممتاز! إجابة صحيحة!","ar");}else{setShake(true);setTimeout(()=>setShake(false),500);speak("حاول مرة أخرى!","ar");}setTimeout(()=>{setFeedback(null);if(idx+1<questions.length){setIdx(idx+1);setSelected(null);}else{playSound("complete");onComplete(score+(correct?1:0));}},1600);}
+  return(<div style={{minHeight:"100vh",background:C.bg,fontFamily:FONT,paddingBottom:30}}>
+    <style>{CSS}</style>
+    <div style={{position:"sticky",top:0,zIndex:100,background:"rgba(249,240,235,.92)",backdropFilter:"blur(18px)",borderBottom:`1px solid rgba(200,90,0,.1)`,padding:"12px 18px",display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+      <StarsBadge/>
+      <div style={{background:C.orangeLt,color:C.orange,border:`1.5px solid rgba(200,90,0,.2)`,borderRadius:99,padding:"4px 12px",fontSize:11,fontWeight:800,display:"flex",alignItems:"center",gap:6}}><span>صل الحرف بالصورة</span></div>
+      <button onClick={()=>{playSound("click");onBack();}} style={{width:36,height:36,borderRadius:"50%",background:C.bg2,border:"none",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",fontSize:16}}>✕</button>
+    </div>
+    <div style={{padding:"14px 18px",display:"flex",flexDirection:"column",gap:12}}>
+      {/* Question */}
+      <div style={{textAlign:"center",animation:"fadeUp .4s ease both"}}>
+        <h2 style={{fontSize:28,fontWeight:900,color:C.text,marginBottom:10}}>{q.q}</h2>
+        <button onClick={()=>speak(q.q,lang)} style={{background:C.greenLt,border:`1.5px solid rgba(26,122,110,.25)`,borderRadius:99,padding:"8px 18px",fontFamily:FONT,fontWeight:800,fontSize:13,color:C.green,cursor:"pointer",display:"inline-flex",alignItems:"center",gap:6}}>🔊 استمع للسؤال</button>
+      </div>
+      {/* Feedback */}
+      {feedback&&<div style={{background:feedback==="correct"?"#EBFFF4":"#FFF0F0",border:`2px solid ${feedback==="correct"?C.green:C.red}`,borderRadius:16,padding:"14px 20px",textAlign:"center",animation:"popIn .3s ease both",color:feedback==="correct"?C.green:C.red,fontWeight:900,fontSize:18}}>{feedback==="correct"?"✅ ممتاز! إجابة صحيحة! 🌟":"❌ حاول مرة أخرى! 💪"}</div>}
+      {/* Options */}
+      <div style={{display:"flex",flexDirection:"column",gap:10,animation:shake?"shake .5s":"none"}}>
+        {q.opts.map((opt,i)=>{
+          let bg="white",border=`2px solid ${C.border}`,color=C.text,shadow=C.shadow;
+          if(selected!==null){if(i===q.ans){bg=C.greenLt;border=`2.5px solid ${C.green}`;color=C.green;shadow=`0 4px 16px rgba(26,122,110,.2)`;}else if(i===selected){bg="#FFF0F0";border=`2.5px solid ${C.red}`;color=C.red;}}
+          return <button key={i} onClick={()=>choose(i)} style={{background:bg,border,color,borderRadius:20,padding:"16px 18px",fontSize:isRTL?18:16,fontWeight:800,cursor:selected?"default":"pointer",transition:"all .25s",direction:isRTL?"rtl":"ltr",fontFamily:FONT,minHeight:60,boxShadow:shadow,display:"flex",alignItems:"center",gap:12,justifyContent:"space-between"}} onMouseEnter={e=>{if(!selected){e.currentTarget.style.background=`${subject?.color||C.orange}12`;e.currentTarget.style.borderColor=subject?.color||C.orange;}}} onMouseLeave={e=>{if(!selected){e.currentTarget.style.background="white";e.currentTarget.style.borderColor=C.border;}}}>
+            <span>{opt}</span>
+            {selected!==null&&i===q.ans&&<span style={{animation:"checkPop .4s ease both",fontSize:18}}>✅</span>}
+          </button>;
+        })}
+      </div>
+      {/* Progress */}
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"4px 0"}}>
+        <span style={{fontSize:12,fontWeight:700,color:C.muted}}>السؤال {idx+1} من {questions.length}</span>
+        <ProgBar pct={((idx+1)/questions.length)*100} color={subject?.color||C.orange}/>
+        <span style={{fontSize:12,fontWeight:700,color:C.orange,marginRight:8}}>{score}✓</span>
+      </div>
+    </div>
+  </div>);
+}
+
+// ─── RESULT SCREEN ────────────────────────────────────────────────
+function ResultScreen({score,total,subject,level,child,onRetry,onHome}){
+  const pct=Math.round((score/total)*100);const stars=pct===100?5:pct>=80?4:pct>=60?3:pct>=40?2:1;const msg=pct===100?"مثالي! أنت نجم! 🌟":pct>=60?"أحسنت! استمر! 💪":"لا تستسلم! 🔄";
+  useEffect(()=>{gaEvent("complete_session",{subject:subject?.id,level:level?.id,score:pct});speak(msg,"ar");},[]);
+  return(<div style={{minHeight:"100vh",background:C.bg,fontFamily:FONT,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:24}}>
+    <style>{CSS}</style>
+    <div style={{width:"100%",maxWidth:400,display:"flex",flexDirection:"column",alignItems:"center",gap:18,animation:"fadeUp .5s ease both"}}>
+      <div style={{fontSize:80,animation:"popIn .6s ease both"}}>{pct===100?"🏆":pct>=60?"🎉":"💡"}</div>
+      <div style={{display:"flex",gap:4}}>{[...Array(5)].map((_,i)=><span key={i} style={{fontSize:28,opacity:i<stars?1:.2,transition:`opacity .3s ${i*.1}s`}}>⭐</span>)}</div>
+      <h2 style={{fontSize:22,color:subject?.color||C.orange,fontWeight:900,textAlign:"center"}}>{msg}</h2>
+      <Card style={{padding:"22px 28px",border:`3px solid ${subject?.color||C.orange}33`,width:"100%"}}>
+        <div style={{display:"flex",justifyContent:"space-around",alignItems:"center"}}>
+          <div style={{textAlign:"center"}}><div style={{fontSize:40,fontWeight:900,color:subject?.color||C.orange}}>{score}/{total}</div><div style={{color:C.muted,fontSize:12,fontWeight:600}}>إجابة صحيحة</div></div>
+          <div style={{width:2,height:46,background:C.border}}/>
+          <div style={{textAlign:"center"}}><div style={{fontSize:40,fontWeight:900,color:level?.color||C.green}}>{pct}%</div><div style={{background:level?.bg,color:level?.color,borderRadius:99,padding:"2px 10px",fontSize:11,fontWeight:800}}>{level?.emoji} {level?.label}</div></div>
+        </div>
+        <div style={{marginTop:14}}><ProgBar pct={pct} color={pct>=60?C.green:C.red}/></div>
+      </Card>
+      <button onClick={async()=>{const text=`🇸🇩 فُسحة\n🎉 ${child?.name} — ${subject?.label}\n✅ ${score}/${total} (${pct}%)\nhttps://fos7a-v2.vercel.app`;try{if(navigator.share)await navigator.share({title:"فُسحة",text});else await navigator.clipboard.writeText(text);}catch{}}} style={{background:"linear-gradient(135deg,#25D366,#128C7E)",border:"none",color:"white",borderRadius:99,padding:"14px 28px",fontWeight:800,fontSize:16,cursor:"pointer",fontFamily:FONT,width:"100%",boxShadow:"0 4px 14px rgba(37,211,102,.3)"}}>📤 شارك النتيجة مع الأهل</button>
+      <div style={{display:"flex",gap:10,width:"100%"}}>
+        <BtnPrimary onClick={onRetry} style={{flex:1}}>🔄 مجدداً</BtnPrimary>
+        <BtnOutline onClick={onHome} style={{flex:1}}>🏠 الرئيسية</BtnOutline>
+      </div>
+    </div>
+  </div>);
+}
+
+// ─── ROOT APP ─────────────────────────────────────────────────────
+export default function App(){
+  const [user,setUser]=useState(null);const [profile,setProfile]=useState(null);const [children,setChildren]=useState([]);const [screen,setScreen]=useState("auth");const [activeChild,setActiveChild]=useState(null);const [activeSubject,setActiveSubject]=useState(null);const [activeLevel,setActiveLevel]=useState(null);const [activeLesson,setActiveLesson]=useState(null);const [questions,setQuestions]=useState([]);const [finalScore,setFinalScore]=useState(0);const [error,setError]=useState(null);const [loading,setLoading]=useState(true);const [toast,setToast]=useState("");
+
+  function showToast(msg){setToast(msg);setTimeout(()=>setToast(""),2500);}
+
+  useEffect(()=>{
+    const h=new URLSearchParams(window.location.hash.replace("#","?"));const at=h.get("access_token");const rt=h.get("refresh_token");
+    async function init(){
+      if(at&&rt){const{data,error}=await supabase.auth.setSession({access_token:at,refresh_token:rt});window.history.replaceState(null,"",window.location.pathname);if(data?.user&&!error){setUser(data.user);await loadProfile(data.user);setLoading(false);return;}}
+      const{data:{session}}=await supabase.auth.getSession();if(session?.user){setUser(session.user);await loadProfile(session.user);}else setScreen("auth");setLoading(false);
+    }
+    init();
+    const{data:{subscription}}=supabase.auth.onAuthStateChange(async(event,session)=>{if(event==="SIGNED_IN"&&session?.user){setUser(session.user);await loadProfile(session.user);setLoading(false);}else if(event==="SIGNED_OUT"){setUser(null);setProfile(null);setChildren([]);setScreen("auth");}});
+    return()=>subscription.unsubscribe();
+    window.speechSynthesis?.getVoices();
+  },[]);
+
+  async function loadProfile(u){const{data:prof}=await supabase.from("profiles").select("*").eq("id",u.id).single();if(prof){setProfile(prof);const{data:kids}=await supabase.from("children").select("*").eq("parent_id",u.id);setChildren(kids||[]);setScreen("home");}else setScreen("setup");}
+
+  const fetchQuestions=useCallback(async(subject,level)=>{
+    setActiveSubject(subject);setActiveLevel(level);setScreen("loading");setError(null);
+    const prompt=buildPrompt(subject.id,activeChild?.age||"old",level.id);if(!prompt){setError("خطأ");setScreen("error");return;}
+    try{const res=await fetch("/api/ask",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({model:"claude-sonnet-4-20250514",max_tokens:1000,messages:[{role:"user",content:prompt}]})});if(!res.ok)throw new Error();const data=await res.json();if(!data?.content?.[0]?.text)throw new Error();const jsonStr=data.content[0].text.replace(/```json|```/gi,"").trim();const parsed=JSON.parse(jsonStr);if(!validateQuestions(parsed))throw new Error();setQuestions(parsed);setScreen("quiz");}
+    catch{setError("مشكلة في توليد الأسئلة.");setScreen("error");}
+  },[activeChild]);
+
+  function handleComplete(score){setFinalScore(score);if(activeChild?.id)supabase.from("sessions").insert({child_id:activeChild.id,subject_id:activeSubject?.id,level_id:activeLevel?.id,score,total:questions.length,pct:Math.round((score/questions.length)*100),created_at:new Date().toISOString()});setScreen("result");}
+
+  function handleTabChange(tab,subjectOverride){
+    playSound("click");
+    if(tab==="home")setScreen("home");
+    else if(tab==="journey"){if(activeChild)setScreen("journey");else showToast("اختر طفلاً أولاً 👶");}
+    else if(tab==="subjects"){if(subjectOverride){setActiveSubject(subjectOverride);if(activeChild)setScreen("journey");else showToast("اختر طفلاً أولاً 👶");}else setScreen("subjects");}
+    else if(tab==="quiz"){setScreen("levels");}
+    else if(tab==="profile")showToast("قريباً! 🚀");
+  }
+
+  const CSS_GLOBAL=`
+    * { box-sizing: border-box; }
+    body { margin:0; padding:0; background:${C.bg}; }
+    @keyframes fadeUp{from{opacity:0;transform:translateY(18px)}to{opacity:1;transform:translateY(0)}}
+    @keyframes popIn{from{opacity:0;transform:scale(.6) rotate(-6deg)}to{opacity:1;transform:scale(1) rotate(0)}}
+    @keyframes float{0%,100%{transform:translateY(0)}50%{transform:translateY(-9px)}}
+    @keyframes shake{0%,100%{transform:translateX(0)}25%,75%{transform:translateX(-7px)}50%{transform:translateX(7px)}}
+    @keyframes spin{to{transform:rotate(360deg)}}
+    @keyframes pulse{0%,100%{transform:scale(1)}50%{transform:scale(1.04)}}
+    @keyframes checkPop{0%{transform:scale(0)}60%{transform:scale(1.3)}100%{transform:scale(1)}}
+    @keyframes shimmer{0%{background-position:-200% 0}100%{background-position:200% 0}}
+    .shimmer-text{background:linear-gradient(90deg,#C85A00 25%,#F28C00 50%,#C85A00 75%);background-size:200% auto;-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;animation:shimmer 2.5s linear infinite;}
+  `;
+
+  if(loading)return <div style={{minHeight:"100vh",background:C.bg,display:"flex",alignItems:"center",justifyContent:"center"}}><style>{CSS_GLOBAL}</style><div style={{textAlign:"center"}}><div style={{fontSize:64,animation:"spin 2s linear infinite",display:"inline-block"}}>🇸🇩</div></div></div>;
+
+  return <>
+    <style>{CSS_GLOBAL}</style>
+    <Toast msg={toast}/>
+    {screen==="auth"        && <AuthScreen onAuth={async u=>{setUser(u);await loadProfile(u);}}/>}
+    {screen==="setup"       && user&&<SetupProfile user={user} onSave={p=>{setProfile(p);setScreen("home");}}/>}
+    {screen==="home"        && <HomeScreen profile={profile} children={children} onAddChild={()=>setScreen("addChild")} onSelectChild={c=>{setActiveChild(c);setScreen("home");}} onTabChange={handleTabChange}/>}
+    {screen==="addChild"    && user&&<AddChildScreen userId={user.id} onSave={c=>{setChildren(p=>[...p,c]);setScreen("home");}} onBack={()=>setScreen("home")}/>}
+    {screen==="journey"     && activeChild&&<JourneyScreen child={activeChild} onPickLesson={l=>{setActiveLesson(l);setActiveSubject(SUBJECTS[0]);setScreen("lesson");}} onPickQuiz={()=>setScreen("levels")} onBack={()=>setScreen("home")} onTabChange={handleTabChange}/>}
+    {screen==="lesson"      && activeLesson&&<LessonScreen lesson={activeLesson} subject={activeSubject} onComplete={()=>setScreen("levels")} onBack={()=>setScreen("journey")}/>}
+    {screen==="levels"      && activeSubject&&<LevelSelector subject={activeSubject} onSelect={lv=>fetchQuestions(activeSubject,lv)} onBack={()=>setScreen("journey")}/>}
+    {screen==="loading"     && <LoadingScreen subject={activeSubject}/>}
+    {screen==="quiz"        && questions.length>0&&activeSubject&&activeLevel&&<QuizScreen subject={activeSubject} level={activeLevel} questions={questions} onBack={()=>setScreen("levels")} onComplete={handleComplete}/>}
+    {screen==="result"      && activeSubject&&activeLevel&&activeChild&&<ResultScreen score={finalScore} total={questions.length} subject={activeSubject} level={activeLevel} child={activeChild} onRetry={()=>fetchQuestions(activeSubject,activeLevel)} onHome={()=>setScreen("home")}/>}
+    {screen==="error"       && <div style={{minHeight:"100vh",background:C.bg,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:20,fontFamily:FONT,padding:24}}><style>{CSS_GLOBAL}</style><div style={{fontSize:56}}>😕</div><p style={{color:C.red,fontWeight:800,fontSize:16,textAlign:"center"}}>{error}</p><div style={{display:"flex",gap:10}}><BtnPrimary onClick={()=>fetchQuestions(activeSubject,activeLevel)}>🔄 حاول مجدداً</BtnPrimary><BtnOutline onClick={()=>setScreen("home")}>رجوع</BtnOutline></div></div>}
+  </>;
 }
