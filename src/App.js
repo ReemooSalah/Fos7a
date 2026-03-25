@@ -527,6 +527,7 @@ export default function App(){
       }
     });
 
+    window.speechSynthesis?.getVoices();
     return()=>subscription.unsubscribe();
   },[]);
 
