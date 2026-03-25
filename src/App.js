@@ -471,18 +471,78 @@ export default function App(){
   function showToast(msg){setToast(msg);setTimeout(()=>setToast(""),2500);}
 
   useEffect(()=>{
-    const h=new URLSearchParams(window.location.hash.replace("#","?"));const at=h.get("access_token");const rt=h.get("refresh_token");
-    async function init(){
-      if(at&&rt){const{data,error}=await supabase.auth.setSession({access_token:at,refresh_token:rt});window.history.replaceState(null,"",window.location.pathname);if(data?.user&&!error){setUser(data.user);await loadProfile(data.user);setLoading(false);return;}}
-      const{data:{session}}=await supabase.auth.getSession();if(session?.user){setUser(session.user);await loadProfile(session.user);}else setScreen("auth");setLoading(false);
-    }
-    init();
-    const{data:{subscription}}=supabase.auth.onAuthStateChange(async(event,session)=>{if(event==="SIGNED_IN"&&session?.user){setUser(session.user);await loadProfile(session.user);setLoading(false);}else if(event==="SIGNED_OUT"){setUser(null);setProfile(null);setChildren([]);setScreen("auth");}});
-    return()=>subscription.unsubscribe();
+    // preload TTS voices
     window.speechSynthesis?.getVoices();
+
+    let initialized = false;
+
+    async function init(){
+      // ── Handle magic link hash (access_token in URL) ──
+      const hash = window.location.hash;
+      if(hash && hash.includes("access_token")){
+        const h = new URLSearchParams(hash.replace("#","?"));
+        const at = h.get("access_token");
+        const rt = h.get("refresh_token");
+        if(at && rt){
+          const {data, error} = await supabase.auth.setSession({access_token:at, refresh_token:rt});
+          // Clean URL immediately
+          window.history.replaceState(null, "", window.location.pathname);
+          if(data?.user && !error){
+            initialized = true;
+            setUser(data.user);
+            await loadProfile(data.user);
+            setLoading(false);
+            return;
+          }
+        }
+      }
+
+      // ── Check existing session ──
+      const {data:{session}} = await supabase.auth.getSession();
+      if(session?.user){
+        initialized = true;
+        setUser(session.user);
+        await loadProfile(session.user);
+      } else {
+        setScreen("auth");
+      }
+      setLoading(false);
+    }
+
+    init();
+
+    // ── Listen for auth changes (OTP verify, sign out) ──
+    const{data:{subscription}}=supabase.auth.onAuthStateChange(async(event,session)=>{
+      if(event==="SIGNED_IN" && session?.user){
+        // Avoid double-loading if init() already handled it
+        if(!initialized){
+          initialized = true;
+          setUser(session.user);
+          await loadProfile(session.user);
+          setLoading(false);
+        }
+      } else if(event==="SIGNED_OUT"){
+        initialized = false;
+        setUser(null); setProfile(null); setChildren([]); setScreen("auth");
+      }
+    });
+
+    return()=>subscription.unsubscribe();
   },[]);
 
-  async function loadProfile(u){const{data:prof}=await supabase.from("profiles").select("*").eq("id",u.id).single();if(prof){setProfile(prof);const{data:kids}=await supabase.from("children").select("*").eq("parent_id",u.id);setChildren(kids||[]);setScreen("home");}else setScreen("setup");}
+  async function loadProfile(u){
+    try{
+      const{data:prof,error:profErr}=await supabase.from("profiles").select("*").eq("id",u.id).single();
+      if(prof&&!profErr){
+        setProfile(prof);
+        const{data:kids}=await supabase.from("children").select("*").eq("parent_id",u.id).order("created_at",{ascending:true});
+        setChildren(kids||[]);
+        setScreen("home");
+      } else {
+        setScreen("setup");
+      }
+    }catch(e){ setScreen("setup"); }
+  }
 
   const fetchQuestions=useCallback(async(subject,level)=>{
     setActiveSubject(subject);setActiveLevel(level);setScreen("loading");setError(null);
